@@ -105,6 +105,13 @@
     width:56px; height:56px; border-radius:50%; object-fit:cover; margin:0 auto 10px auto;
     background:var(--gris-claro); border:2px dashed #d5d9e6;
   }
+  .btn-file{
+    display:block; text-align:center; padding:12px; border-radius:12px;
+    border:1.5px dashed #d5d9e6; background:var(--gris-claro); color:var(--azul-2);
+    font-weight:700; font-size:13px;
+  }
+  .btn-file:active{ opacity:.8; }
+  .foto-status{ font-size:11px; color:var(--gris); margin-top:6px; text-align:center; min-height:14px; }
 
   /* ---------- MATCH CARDS ---------- */
   .ronda-title{
@@ -251,8 +258,10 @@
         <input type="text" id="inputNombre" placeholder="Ej: Toto" maxlength="30">
       </div>
       <div class="field">
-        <label>Foto de perfil (URL de imagen)</label>
-        <input type="url" id="inputFoto" placeholder="https://... (opcional)">
+        <label>Foto de perfil (opcional)</label>
+        <label for="inputFotoFile" class="btn-file">📷 Elegir foto del celular</label>
+        <input type="file" id="inputFotoFile" accept="image/*" style="display:none;">
+        <div class="foto-status" id="fotoUploadStatus"></div>
       </div>
       <div class="field">
         <label>Tu club campeón del Clausura 🏆</label>
@@ -264,14 +273,12 @@
           <option>Guaraní</option>
           <option>Nacional</option>
           <option>Sportivo Luqueño</option>
-          <option>Sol de América</option>
-          <option>Ameliano</option>
-          <option>General Caballero JLM</option>
-          <option>2 de Mayo</option>
-          <option>Recoleta</option>
+          <option>Sportivo Ameliano</option>
+          <option>Sportivo 2 de Mayo</option>
           <option>Sportivo Trinidense</option>
-          <option>General Díaz</option>
-          <option>Independiente FBC</option>
+          <option>Sportivo San Lorenzo</option>
+          <option>Recoleta FC</option>
+          <option>Rubio Ñu</option>
           <option>Otro</option>
         </select>
       </div>
@@ -292,9 +299,12 @@
           <div class="subtitle">Clausura · Copa de Primera</div>
         </div>
       </div>
-      <div class="user-chip" id="userChip">
-        <img id="userChipAvatar" src="" alt="">
-        <span id="userChipName">-</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button id="btnRefresh" title="Actualizar" style="background:rgba(255,255,255,0.12); border:none; color:#fff; width:34px; height:34px; border-radius:50%; font-size:15px;">🔄</button>
+        <div class="user-chip" id="userChip">
+          <img id="userChipAvatar" src="" alt="">
+          <span id="userChipName">-</span>
+        </div>
       </div>
     </header>
 
@@ -371,7 +381,9 @@ var STATE = {
   apuestas: [],
   config: [],
   matchPendingClose: null,
-  pollTimer: null
+  pollTimer: null,
+  fotoDataUrlPendiente: null, // foto comprimida lista para subir en el registro
+  finalizadosVistos: null     // ids de partidos ya vistos como FINALIZADO (para avisar resultados nuevos)
 };
 
 /* =========================================================================
@@ -428,6 +440,48 @@ function safeImg(url, nombre){
   return url && url.trim() ? url.trim() : avatarFallback(nombre);
 }
 
+/**
+ * Lee un archivo de imagen, corrige la orientación (fotos de celular) y lo
+ * devuelve reducido/comprimido como dataURL JPEG, listo para subir a Drive.
+ */
+function comprimirImagen(file, maxDim, calidad){
+  return new Promise(function(resolve, reject){
+    function dibujarYComprimir(source, width, height){
+      try {
+        var canvas = document.createElement('canvas');
+        var scale = Math.min(1, maxDim / Math.max(width, height));
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', calidad));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function cargarConImgTag(){
+      var reader = new FileReader();
+      reader.onload = function(ev){
+        var img = new Image();
+        img.onload = function(){ dibujarYComprimir(img, img.width, img.height); };
+        img.onerror = function(){ reject(new Error('No se pudo leer la imagen.')); };
+        img.src = ev.target.result;
+      };
+      reader.onerror = function(){ reject(new Error('No se pudo leer el archivo.')); };
+      reader.readAsDataURL(file);
+    }
+
+    if (window.createImageBitmap) {
+      createImageBitmap(file, { imageOrientation: 'from-image' })
+        .then(function(bitmap){ dibujarYComprimir(bitmap, bitmap.width, bitmap.height); })
+        .catch(cargarConImgTag);
+    } else {
+      cargarConImgTag();
+    }
+  });
+}
+
 /* Estado de un partido respecto al horario de cierre */
 function estadoPartido(partido){
   if (String(partido.estado).toUpperCase() === 'FINALIZADO') return 'finalizado';
@@ -477,16 +531,31 @@ function initLogin(){
     } catch(e){ localStorage.removeItem(LS_KEY); }
   }
 
-  $('#inputFoto').addEventListener('input', function(){
-    $('#avatarPreview').src = safeImg(this.value, $('#inputNombre').value);
-  });
   $('#inputNombre').addEventListener('input', function(){
-    if (!$('#inputFoto').value) $('#avatarPreview').src = safeImg('', this.value);
+    if (!STATE.fotoDataUrlPendiente) $('#avatarPreview').src = safeImg('', this.value);
+  });
+
+  $('#inputFotoFile').addEventListener('change', function(){
+    var file = this.files && this.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { showToast('Elegí un archivo de imagen.'); return; }
+
+    var statusEl = $('#fotoUploadStatus');
+    statusEl.textContent = 'Procesando imagen...';
+
+    comprimirImagen(file, 480, 0.75)
+      .then(function(dataUrl){
+        STATE.fotoDataUrlPendiente = dataUrl;
+        $('#avatarPreview').src = dataUrl;
+        statusEl.textContent = 'Foto lista ✅';
+      })
+      .catch(function(){
+        statusEl.textContent = 'No se pudo procesar esa imagen, probá con otra.';
+      });
   });
 
   $('#btnRegistrar').addEventListener('click', function(){
     var nombre = $('#inputNombre').value.trim();
-    var foto = $('#inputFoto').value.trim();
     var club = $('#inputClub').value;
 
     if (!nombre) { showToast('Poné tu nombre o apodo.'); return; }
@@ -496,7 +565,27 @@ function initLogin(){
     btn.disabled = true;
     btn.textContent = 'Entrando...';
 
-    apiPost({ action: 'registrarUsuario', nombre: nombre, foto_url: foto, club_campeon: club })
+    var subidaFoto;
+    if (STATE.fotoDataUrlPendiente) {
+      btn.textContent = 'Subiendo foto...';
+      var partes = STATE.fotoDataUrlPendiente.split(',');
+      var match = /data:(.*);base64/.exec(partes[0]);
+      var mime = match ? match[1] : 'image/jpeg';
+      subidaFoto = apiPost({
+        action: 'subirFoto',
+        imagen_base64: partes[1],
+        mime_type: mime,
+        nombre_archivo: 'foto_' + Date.now() + '.jpg'
+      }).then(function(res){ return res.foto_url; });
+    } else {
+      subidaFoto = Promise.resolve('');
+    }
+
+    subidaFoto
+      .then(function(fotoUrl){
+        btn.textContent = 'Entrando...';
+        return apiPost({ action: 'registrarUsuario', nombre: nombre, foto_url: fotoUrl, club_campeon: club });
+      })
       .then(function(usuario){
         STATE.usuario = usuario;
         localStorage.setItem(LS_KEY, JSON.stringify(usuario));
@@ -517,8 +606,17 @@ function showApp(){
   $('#userChipName').textContent = STATE.usuario.nombre;
   $('#tipFloat').style.display = 'flex';
   loadAllData(true);
-  STATE.pollTimer = setInterval(function(){ loadAllData(false); }, 45000);
+  STATE.pollTimer = setInterval(function(){ loadAllData(false); }, 20000);
 }
+
+$('#btnRefresh').addEventListener('click', function(){
+  var btn = this;
+  btn.style.opacity = '.5';
+  loadAllData(false).then(function(){
+    showToast('Actualizado ✅');
+    btn.style.opacity = '1';
+  });
+});
 
 /* =========================================================================
    CARGA DE DATOS
@@ -532,6 +630,7 @@ function loadAllData(isFirstLoad){
     STATE.apuestas = data.apuestas || [];
     STATE.config = data.config || [];
 
+    avisarResultadosNuevos();
     renderPartidos();
     renderPosiciones();
     if (isFirstLoad) checkUltimoLugar();
@@ -540,10 +639,38 @@ function loadAllData(isFirstLoad){
   });
 }
 
+/**
+ * Compara los partidos FINALIZADO de esta carga contra los ya vistos.
+ * Si aparece alguno nuevo, avisa que los puntos se actualizaron
+ * (sin avisar en la primerísima carga, para no spamear al entrar).
+ */
+function avisarResultadosNuevos(){
+  var finalizadosAhora = STATE.partidos.filter(function(p){
+    return String(p.estado).toUpperCase() === 'FINALIZADO';
+  }).map(function(p){ return p.id_partido; });
+
+  if (STATE.finalizadosVistos === null) {
+    STATE.finalizadosVistos = {};
+    finalizadosAhora.forEach(function(id){ STATE.finalizadosVistos[id] = true; });
+    return;
+  }
+
+  var hayNuevo = finalizadosAhora.some(function(id){ return !STATE.finalizadosVistos[id]; });
+  finalizadosAhora.forEach(function(id){ STATE.finalizadosVistos[id] = true; });
+
+  if (hayNuevo) {
+    showToast('¡Se cargó un resultado nuevo! Puntos actualizados 🎯');
+  }
+}
+
 /* =========================================================================
    PUNTUACIÓN
    ========================================================================= */
 function calcularPuntos(apuesta, partido){
+  // Solo cuenta puntos si el admin marcó el partido como FINALIZADO en la hoja
+  // (evita contar de más si alguien carga goles antes de que termine el partido).
+  if (String(partido.estado).toUpperCase() !== 'FINALIZADO') return null;
+
   var gl = Number(partido.goles_local_real);
   var gv = Number(partido.goles_visitante_real);
   if (isNaN(gl) || isNaN(gv)) return null; // partido sin resultado cargado
