@@ -55,6 +55,18 @@
   }
   .user-chip img{ width:28px; height:28px; border-radius:50%; object-fit:cover; background:#fff; }
   .user-chip span{ font-size:12px; font-weight:600; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .user-menu{
+    position:absolute; top:64px; right:14px; background:#fff; border-radius:14px;
+    box-shadow:var(--sombra); overflow:hidden; z-index:60; min-width:180px; display:none;
+  }
+  .user-menu.open{ display:block; }
+  .user-menu button{
+    display:block; width:100%; text-align:left; padding:13px 15px; border:none; background:none;
+    font-size:13px; font-weight:700; color:var(--azul-2);
+  }
+  .user-menu button:active{ background:var(--gris-claro); }
+  .user-menu button + button{ border-top:1px solid #f1f2f8; }
+  .user-menu button.danger{ color:var(--rojo); }
 
   /* ---------- TABS ---------- */
   .tabs{
@@ -112,6 +124,12 @@
   }
   .btn-file:active{ opacity:.8; }
   .foto-status{ font-size:11px; color:var(--gris); margin-top:6px; text-align:center; min-height:14px; }
+  .login-toggle{ display:flex; gap:8px; margin-bottom:18px; }
+  .toggle-btn{
+    flex:1; border:none; background:var(--gris-claro); color:var(--gris-oscuro);
+    padding:10px 8px; border-radius:12px; font-weight:700; font-size:12.5px;
+  }
+  .toggle-btn.active{ background:var(--azul); color:#fff; }
 
   /* ---------- MATCH CARDS ---------- */
   .ronda-title{
@@ -251,39 +269,51 @@
       <h2>Fulbo</h2>
       <p class="lead">Prode del Torneo Clausura - Liga Paraguaya</p>
 
-      <img id="avatarPreview" class="avatar-preview" src="" alt="">
+      <div class="login-toggle">
+        <button type="button" class="toggle-btn active" data-mode="registro">Crear cuenta</button>
+        <button type="button" class="toggle-btn" data-mode="login">Ya tengo cuenta</button>
+      </div>
 
       <div class="field">
         <label>Tu nombre o apodo</label>
         <input type="text" id="inputNombre" placeholder="Ej: Toto" maxlength="30">
       </div>
       <div class="field">
-        <label>Foto de perfil (opcional)</label>
-        <label for="inputFotoFile" class="btn-file">📷 Elegir foto del celular</label>
-        <input type="file" id="inputFotoFile" accept="image/*" style="display:none;">
-        <div class="foto-status" id="fotoUploadStatus"></div>
+        <label>Contraseña</label>
+        <input type="password" id="inputPassword" placeholder="Mínimo 4 caracteres" maxlength="60" autocomplete="off">
       </div>
-      <div class="field">
-        <label>Tu club campeón del Clausura 🏆</label>
-        <select id="inputClub">
-          <option value="">Elegí un club...</option>
-          <option>Cerro Porteño</option>
-          <option>Olimpia</option>
-          <option>Libertad</option>
-          <option>Guaraní</option>
-          <option>Nacional</option>
-          <option>Sportivo Luqueño</option>
-          <option>Sportivo Ameliano</option>
-          <option>Sportivo 2 de Mayo</option>
-          <option>Sportivo Trinidense</option>
-          <option>Sportivo San Lorenzo</option>
-          <option>Recoleta FC</option>
-          <option>Rubio Ñu</option>
-          <option>Otro</option>
-        </select>
+
+      <div id="camposRegistro">
+        <img id="avatarPreview" class="avatar-preview" src="" alt="">
+        <div class="field">
+          <label>Foto de perfil (opcional)</label>
+          <label for="inputFotoFile" class="btn-file">📷 Elegir foto del celular</label>
+          <input type="file" id="inputFotoFile" accept="image/*" style="display:none;">
+          <div class="foto-status" id="fotoUploadStatus"></div>
+        </div>
+        <div class="field">
+          <label>Tu club campeón del Clausura 🏆</label>
+          <select id="inputClub">
+            <option value="">Elegí un club...</option>
+            <option>Cerro Porteño</option>
+            <option>Olimpia</option>
+            <option>Libertad</option>
+            <option>Guaraní</option>
+            <option>Nacional</option>
+            <option>Sportivo Luqueño</option>
+            <option>Sportivo Ameliano</option>
+            <option>Sportivo 2 de Mayo</option>
+            <option>Sportivo Trinidense</option>
+            <option>Sportivo San Lorenzo</option>
+            <option>Recoleta FC</option>
+            <option>Rubio Ñu</option>
+            <option>Otro</option>
+          </select>
+        </div>
       </div>
-      <button class="btn-primary" id="btnRegistrar">Entrar al Prode 🍻</button>
-      <p style="text-align:center;font-size:10.5px;color:var(--gris);margin-top:12px;">
+
+      <button class="btn-primary" id="btnRegistrar">Crear cuenta y entrar 🍻</button>
+      <p id="bonusHint" style="text-align:center;font-size:10.5px;color:var(--gris);margin-top:12px;">
         Acertar el campeón al final del torneo suma +15 puntos bonus.
       </p>
     </div>
@@ -291,7 +321,7 @@
 
   <!-- ===================== APP PRINCIPAL ===================== -->
   <div id="screen-app" style="display:none;">
-    <header class="app-header">
+    <header class="app-header" style="position:relative;">
       <div class="brand">
         <div class="logo">⚽</div>
         <div>
@@ -301,11 +331,16 @@
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <button id="btnRefresh" title="Actualizar" style="background:rgba(255,255,255,0.12); border:none; color:#fff; width:34px; height:34px; border-radius:50%; font-size:15px;">🔄</button>
-        <div class="user-chip" id="userChip">
+        <div class="user-chip" id="userChip" style="cursor:pointer;">
           <img id="userChipAvatar" src="" alt="">
           <span id="userChipName">-</span>
         </div>
       </div>
+      <div class="user-menu" id="userMenu">
+        <button id="menuCambiarFoto">📷 Cambiar foto</button>
+        <button id="menuCerrarSesion" class="danger">🚪 Cerrar sesión</button>
+      </div>
+      <input type="file" id="inputFotoFileCambiar" accept="image/*" style="display:none;">
     </header>
 
     <div class="tabs">
@@ -363,7 +398,7 @@
    ========================================================================= */
 var CONFIG = {
   // Reemplazá esto con la URL de tu Web App de Google Apps Script
-  SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzMz3hzfRBNKqAati9J13Gx-H3HEq7l2DnB5l9KqLQZNywzuxS1wLVXd3lKuejyXWEU/exec',
+  SCRIPT_URL: 'https://script.google.com/macros/s/TU_ID_DE_DESPLIEGUE/exec',
   ALIAS_ADMIN: '4610287',
   CIERRE_MINUTOS_ANTES: 60
 };
@@ -521,6 +556,8 @@ function apiPost(payload){
 /* =========================================================================
    REGISTRO / LOGIN
    ========================================================================= */
+var loginMode = 'registro'; // 'registro' | 'login'
+
 function initLogin(){
   var stored = localStorage.getItem(LS_KEY);
   if (stored) {
@@ -530,6 +567,20 @@ function initLogin(){
       return;
     } catch(e){ localStorage.removeItem(LS_KEY); }
   }
+
+  $all('.toggle-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      loginMode = this.getAttribute('data-mode');
+      $all('.toggle-btn').forEach(function(b){ b.classList.remove('active'); });
+      this.classList.add('active');
+
+      var esRegistro = loginMode === 'registro';
+      $('#camposRegistro').style.display = esRegistro ? 'block' : 'none';
+      $('#bonusHint').style.display = esRegistro ? 'block' : 'none';
+      $('#btnRegistrar').textContent = esRegistro ? 'Crear cuenta y entrar 🍻' : 'Entrar 🍻';
+      $('#inputPassword').setAttribute('placeholder', esRegistro ? 'Mínimo 4 caracteres' : 'Tu contraseña');
+    });
+  });
 
   $('#inputNombre').addEventListener('input', function(){
     if (!STATE.fotoDataUrlPendiente) $('#avatarPreview').src = safeImg('', this.value);
@@ -556,14 +607,37 @@ function initLogin(){
 
   $('#btnRegistrar').addEventListener('click', function(){
     var nombre = $('#inputNombre').value.trim();
-    var club = $('#inputClub').value;
+    var password = $('#inputPassword').value;
 
     if (!nombre) { showToast('Poné tu nombre o apodo.'); return; }
-    if (!club) { showToast('Elegí tu club campeón.'); return; }
+    if (!password) { showToast('Poné tu contraseña.'); return; }
 
     var btn = $('#btnRegistrar');
+
+    if (loginMode === 'login') {
+      btn.disabled = true;
+      btn.textContent = 'Entrando...';
+      apiPost({ action: 'iniciarSesion', nombre: nombre, password: password })
+        .then(function(usuario){
+          STATE.usuario = usuario;
+          localStorage.setItem(LS_KEY, JSON.stringify(usuario));
+          showApp();
+        })
+        .catch(function(err){
+          showToast('Error: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Entrar 🍻';
+        });
+      return;
+    }
+
+    // Modo registro
+    var club = $('#inputClub').value;
+    if (password.length < 4) { showToast('La contraseña debe tener al menos 4 caracteres.'); return; }
+    if (!club) { showToast('Elegí tu club campeón.'); return; }
+
     btn.disabled = true;
-    btn.textContent = 'Entrando...';
+    btn.textContent = 'Creando cuenta...';
 
     var subidaFoto;
     if (STATE.fotoDataUrlPendiente) {
@@ -583,8 +657,8 @@ function initLogin(){
 
     subidaFoto
       .then(function(fotoUrl){
-        btn.textContent = 'Entrando...';
-        return apiPost({ action: 'registrarUsuario', nombre: nombre, foto_url: fotoUrl, club_campeon: club });
+        btn.textContent = 'Creando cuenta...';
+        return apiPost({ action: 'registrarUsuario', nombre: nombre, password: password, foto_url: fotoUrl, club_campeon: club });
       })
       .then(function(usuario){
         STATE.usuario = usuario;
@@ -594,7 +668,7 @@ function initLogin(){
       .catch(function(err){
         showToast('Error: ' + err.message);
         btn.disabled = false;
-        btn.textContent = 'Entrar al Prode 🍻';
+        btn.textContent = 'Crear cuenta y entrar 🍻';
       });
   });
 }
@@ -616,6 +690,70 @@ $('#btnRefresh').addEventListener('click', function(){
     showToast('Actualizado ✅');
     btn.style.opacity = '1';
   });
+});
+
+/* =========================================================================
+   MENÚ DE PERFIL (cambiar foto / cerrar sesión)
+   ========================================================================= */
+$('#userChip').addEventListener('click', function(ev){
+  ev.stopPropagation();
+  $('#userMenu').classList.toggle('open');
+});
+
+document.addEventListener('click', function(ev){
+  var menu = $('#userMenu');
+  if (menu.classList.contains('open') && !menu.contains(ev.target) && ev.target !== $('#userChip')) {
+    menu.classList.remove('open');
+  }
+});
+
+$('#menuCerrarSesion').addEventListener('click', function(){
+  $('#userMenu').classList.remove('open');
+  if (confirm('¿Cerrar sesión de ' + (STATE.usuario ? STATE.usuario.nombre : '') + '?')) {
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  }
+});
+
+$('#menuCambiarFoto').addEventListener('click', function(){
+  $('#userMenu').classList.remove('open');
+  $('#inputFotoFileCambiar').click();
+});
+
+$('#inputFotoFileCambiar').addEventListener('change', function(){
+  var file = this.files && this.files[0];
+  this.value = ''; // permite elegir el mismo archivo de nuevo más adelante
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { showToast('Elegí un archivo de imagen.'); return; }
+
+  showToast('Procesando foto...');
+
+  comprimirImagen(file, 480, 0.75)
+    .then(function(dataUrl){
+      showToast('Subiendo foto...');
+      var partes = dataUrl.split(',');
+      var match = /data:(.*);base64/.exec(partes[0]);
+      var mime = match ? match[1] : 'image/jpeg';
+      return apiPost({
+        action: 'subirFoto',
+        imagen_base64: partes[1],
+        mime_type: mime,
+        nombre_archivo: 'foto_' + Date.now() + '.jpg'
+      });
+    })
+    .then(function(res){
+      return apiPost({ action: 'actualizarFoto', id_usuario: STATE.usuario.id_usuario, foto_url: res.foto_url });
+    })
+    .then(function(res){
+      STATE.usuario.foto_url = res.foto_url;
+      localStorage.setItem(LS_KEY, JSON.stringify(STATE.usuario));
+      $('#userChipAvatar').src = safeImg(res.foto_url, STATE.usuario.nombre);
+      showToast('¡Foto actualizada! ✅');
+      loadAllData(false); // para que se vea la foto nueva en la lista de pronósticos
+    })
+    .catch(function(err){
+      showToast('Error: ' + err.message);
+    });
 });
 
 /* =========================================================================
