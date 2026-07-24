@@ -247,6 +247,11 @@
   .btn-secondary{ background:var(--gris-claro); color:var(--azul-2); }
   .btn-danger{ background:var(--rojo); color:#fff; }
   .btn-ghost{ background:#fff; border:1.5px solid #e3e6f0 !important; color:var(--gris-oscuro); }
+  .alias-grande{
+    text-align:center; font-size:32px; font-weight:900; letter-spacing:2px;
+    color:var(--rojo); background:var(--gris-claro); border-radius:14px; padding:16px;
+    margin-bottom:16px; font-family:'Courier New',monospace;
+  }
 
   .toast{
     position:fixed; top:16px; left:50%; transform:translateX(-50%);
@@ -370,11 +375,21 @@
   <!-- ===================== MODAL: CIERRE DE APUESTAS ===================== -->
   <div class="overlay" id="overlayCerrado">
     <div class="modal">
-      <h3>❌ ¡Hule, se te pasó la hora!</h3>
-      <p id="textoModalCerrado">Las apuestas para este partido ya se cerraron. Ya no se puede cargar ni modificar el pronóstico.</p>
-      <div class="modal-actions">
-        <button class="btn-ghost" id="btnSoborno">🤝 Intentar Soborno al Admin</button>
-        <button class="btn-secondary" id="btnCerrarModalCerrado">Entendido</button>
+      <div id="vistaHule">
+        <h3>❌ ¡Hule, se te pasó la hora!</h3>
+        <p id="textoModalCerrado">Las apuestas para este partido ya se cerraron. Ya no se puede cargar ni modificar el pronóstico.</p>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="btnSoborno">🤝 Intentar Soborno al Admin</button>
+          <button class="btn-secondary" id="btnCerrarModalCerrado">Entendido</button>
+        </div>
+      </div>
+      <div id="vistaSoborno" style="display:none;">
+        <h3>💸 ¡Alias copiado!</h3>
+        <div class="alias-grande" id="aliasGrandeTexto"></div>
+        <p>La apuesta <b>NO</b> se procesará igual 😅. Pero bueno, se agradece el gesto.</p>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="btnCerrarModalSoborno" style="width:100%;">Entendido</button>
+        </div>
       </div>
     </div>
   </div>
@@ -983,22 +998,23 @@ function renderMatchCard(partido){
     var gv = partido.goles_visitante_real;
     scoreBlock = '<div class="real-score">' + (gl === '' || gl === undefined ? '-' : gl) + ' : ' + (gv === '' || gv === undefined ? '-' : gv) + '</div>';
   } else {
+    // abierto o cerrado: los campos quedan habilitados en los dos casos.
+    // Si está cerrado, recién al tocar "Guardar" el backend lo rechaza y
+    // ahí sale el aviso de "Hule, se te pasó la hora" (la gracia es que
+    // parezca que todavía se puede apostar).
     var vLocal = miApuesta ? miApuesta.goles_local : '';
     var vVis = miApuesta ? miApuesta.goles_visitante : '';
-    var disabled = estado === 'cerrado' ? 'disabled' : '';
     scoreBlock =
       '<div class="score-inputs">' +
-        '<input type="number" min="0" max="30" ' + disabled + ' class="inp-local" value="' + vLocal + '" placeholder="0">' +
+        '<input type="number" min="0" max="30" class="inp-local" value="' + vLocal + '" placeholder="0">' +
         '<span class="score-sep">:</span>' +
-        '<input type="number" min="0" max="30" ' + disabled + ' class="inp-visitante" value="' + vVis + '" placeholder="0">' +
+        '<input type="number" min="0" max="30" class="inp-visitante" value="' + vVis + '" placeholder="0">' +
       '</div>';
   }
 
   var accionBtn = '';
-  if (estado === 'abierto') {
+  if (estado === 'abierto' || estado === 'cerrado') {
     accionBtn = '<div class="match-actions"><button class="btn-apostar" data-id="' + partido.id_partido + '">' + (miApuesta ? 'Actualizar apuesta' : 'Guardar apuesta') + '</button></div>';
-  } else if (estado === 'cerrado' && !miApuesta) {
-    accionBtn = '<div class="match-actions"><button class="btn-apostar" data-id="' + partido.id_partido + '" data-blocked="1">Guardar apuesta</button></div>';
   }
 
   var miApuestaTag = '';
@@ -1082,12 +1098,6 @@ function bindMatchCardEvents(){
   $all('.btn-apostar').forEach(function(btn){
     btn.addEventListener('click', function(){
       var idPartido = this.getAttribute('data-id');
-
-      if (this.getAttribute('data-blocked') === '1') {
-        abrirModalCerrado(idPartido);
-        return;
-      }
-
       var card = document.querySelector('.match-card[data-partido="' + idPartido + '"]');
       var gl = card.querySelector('.inp-local').value;
       var gv = card.querySelector('.inp-visitante').value;
@@ -1095,6 +1105,7 @@ function bindMatchCardEvents(){
       if (gl === '' || gv === '') { showToast('Completá ambos marcadores.'); return; }
 
       var btnRef = this;
+      var textoOriginal = btnRef.textContent;
       btnRef.disabled = true;
       btnRef.textContent = 'Guardando...';
 
@@ -1109,12 +1120,14 @@ function bindMatchCardEvents(){
         loadAllData(false);
       }).catch(function(err){
         if (/CERRADO/i.test(err.message)) {
+          // Acá es donde se revela la broma: dejamos que intente guardar
+          // como si todavía se pudiera, y recién ahora sale el aviso.
           abrirModalCerrado(idPartido);
         } else {
           showToast('Error: ' + err.message);
         }
         btnRef.disabled = false;
-        btnRef.textContent = 'Guardar apuesta';
+        btnRef.textContent = textoOriginal;
       });
     });
   });
@@ -1127,17 +1140,24 @@ function abrirModalCerrado(idPartido){
   STATE.matchPendingClose = idPartido;
   var minutos = obtenerMinutosCierre();
   $('#textoModalCerrado').textContent = 'Las apuestas para este partido se cerraron ' + minutos + ' minutos antes del inicio. Ya no se puede cargar ni modificar el pronóstico.';
+  $('#vistaHule').style.display = 'block';
+  $('#vistaSoborno').style.display = 'none';
   $('#overlayCerrado').classList.add('open');
 }
 
-$('#btnCerrarModalCerrado').addEventListener('click', function(){
+function cerrarModalCerrado(){
   $('#overlayCerrado').classList.remove('open');
-  loadAllData(false); // refresca para desbloquear el input si corresponde
-});
+  loadAllData(false); // refresca por las dudas
+}
+
+$('#btnCerrarModalCerrado').addEventListener('click', cerrarModalCerrado);
+$('#btnCerrarModalSoborno').addEventListener('click', cerrarModalCerrado);
 
 $('#btnSoborno').addEventListener('click', function(){
   copyToClipboard(CONFIG.ALIAS_ADMIN);
-  showToast('Alias copiado (la apuesta NO se procesará igual 😅)');
+  $('#aliasGrandeTexto').textContent = CONFIG.ALIAS_ADMIN;
+  $('#vistaHule').style.display = 'none';
+  $('#vistaSoborno').style.display = 'block';
 });
 
 /* =========================================================================
