@@ -174,12 +174,12 @@
     font-size:11px; text-align:center; color:var(--gris-oscuro); margin-top:8px; font-weight:600;
   }
 
-  .toggle-picks{
+  .toggle-picks, .toggle-hist{
     margin-top:10px; width:100%; background:none; border:none; color:var(--azul);
     font-size:12px; font-weight:700; padding:8px 0; border-top:1px dashed #e5e8f2;
   }
-  .picks-list{ display:none; margin-top:6px; }
-  .picks-list.open{ display:block; }
+  .picks-list, .hist-list{ display:none; margin-top:6px; }
+  .picks-list.open, .hist-list.open{ display:block; }
   .pick-row{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
     padding:7px 4px; font-size:12.5px; border-bottom:1px solid #f1f2f8;
@@ -195,10 +195,11 @@
   .pts-0{ background:#fdeceb; color:var(--rojo); }
 
   /* ---------- POSICIONES ---------- */
-  .rank-row{
-    display:flex; align-items:center; gap:12px; background:#fff; border-radius:14px;
-    padding:12px; margin-bottom:9px; box-shadow:var(--sombra);
+  .rank-card{
+    background:#fff; border-radius:14px; padding:12px; margin-bottom:9px; box-shadow:var(--sombra);
   }
+  .rank-card.top1{ border:2px solid var(--amarillo); }
+  .rank-row{ display:flex; align-items:center; gap:12px; }
   .rank-pos{ width:26px; text-align:center; font-weight:900; color:var(--gris-oscuro); font-size:14px; }
   .rank-row img.avatar{ width:38px; height:38px; border-radius:50%; object-fit:cover; background:var(--gris-claro); }
   .rank-info{ flex:1; min-width:0; }
@@ -206,7 +207,8 @@
   .rank-club{ font-size:11px; color:var(--gris); }
   .rank-points{ font-size:16px; font-weight:900; color:var(--rojo); text-align:right; }
   .rank-points span{ display:block; font-size:9px; color:var(--gris); font-weight:700; }
-  .rank-row.top1{ border:2px solid var(--amarillo); }
+  .hist-match{ flex:1; min-width:0; font-size:11px; line-height:1.4; color:var(--gris-oscuro); padding-right:8px; }
+  .hist-match b{ color:var(--azul); }
 
   /* ---------- FLOATING TIP ---------- */
   .tip-float{
@@ -369,7 +371,7 @@
   <div class="overlay" id="overlayCerrado">
     <div class="modal">
       <h3>❌ ¡Hule, se te pasó la hora!</h3>
-      <p>Las apuestas para este partido se cerraron 1 hora antes del inicio. Ya no se puede cargar ni modificar el pronóstico.</p>
+      <p id="textoModalCerrado">Las apuestas para este partido ya se cerraron. Ya no se puede cargar ni modificar el pronóstico.</p>
       <div class="modal-actions">
         <button class="btn-ghost" id="btnSoborno">🤝 Intentar Soborno al Admin</button>
         <button class="btn-secondary" id="btnCerrarModalCerrado">Entendido</button>
@@ -400,7 +402,8 @@ var CONFIG = {
   // Reemplazá esto con la URL de tu Web App de Google Apps Script
   SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzMz3hzfRBNKqAati9J13Gx-H3HEq7l2DnB5l9KqLQZNywzuxS1wLVXd3lKuejyXWEU/exec',
   ALIAS_ADMIN: '4610287',
-  CIERRE_MINUTOS_ANTES: 60
+  // Se usa solo si todavía no cargaste "minutos_cierre" en la pestaña Config del Sheet
+  CIERRE_MINUTOS_DEFECTO: 60
 };
 
 var LS_KEY = 'fulbo_user';
@@ -521,11 +524,23 @@ function comprimirImagen(file, maxDim, calidad){
 function estadoPartido(partido){
   if (String(partido.estado).toUpperCase() === 'FINALIZADO') return 'finalizado';
   var fecha = new Date(partido.fecha_hora);
-  var cierre = new Date(fecha.getTime() - CONFIG.CIERRE_MINUTOS_ANTES * 60000);
+  var cierre = new Date(fecha.getTime() - obtenerMinutosCierre() * 60000);
   var ahora = new Date();
   if (ahora >= fecha) return 'vivo';
   if (ahora >= cierre) return 'cerrado';
   return 'abierto';
+}
+
+/**
+ * Minutos antes del inicio en que se cierran las apuestas, leídos de la
+ * pestaña Config (clave "minutos_cierre"). Si todavía no cargó los datos
+ * o no está configurado, usa el valor por defecto.
+ */
+function obtenerMinutosCierre(){
+  var valor = getConfigValor('minutos_cierre');
+  var minutos = Number(valor);
+  if (!valor || isNaN(minutos) || minutos < 0) return CONFIG.CIERRE_MINUTOS_DEFECTO;
+  return minutos;
 }
 
 /* =========================================================================
@@ -1110,6 +1125,8 @@ function bindMatchCardEvents(){
    ========================================================================= */
 function abrirModalCerrado(idPartido){
   STATE.matchPendingClose = idPartido;
+  var minutos = obtenerMinutosCierre();
+  $('#textoModalCerrado').textContent = 'Las apuestas para este partido se cerraron ' + minutos + ' minutos antes del inicio. Ya no se puede cargar ni modificar el pronóstico.';
   $('#overlayCerrado').classList.add('open');
 }
 
@@ -1171,20 +1188,89 @@ function renderPosiciones(){
     if (idx === 0) badges += ' 👑';
     if (muertoIds.indexOf(u.id_usuario) !== -1) badges += ' 🪦';
 
+    var cantidadApuestas = STATE.apuestas.filter(function(a){ return a.id_usuario === u.id_usuario; }).length;
+
     return (
-      '<div class="rank-row ' + (idx === 0 ? 'top1' : '') + '">' +
-        '<div class="rank-pos">' + (idx + 1) + '</div>' +
-        '<img class="avatar" src="' + safeImg(u.foto_url, u.nombre) + '">' +
-        '<div class="rank-info">' +
-          '<div class="rank-name">' + u.nombre + badges + '</div>' +
-          '<div class="rank-club">🏆 ' + (u.club_campeon || '-') + '</div>' +
+      '<div class="rank-card ' + (idx === 0 ? 'top1' : '') + '">' +
+        '<div class="rank-row">' +
+          '<div class="rank-pos">' + (idx + 1) + '</div>' +
+          '<img class="avatar" src="' + safeImg(u.foto_url, u.nombre) + '">' +
+          '<div class="rank-info">' +
+            '<div class="rank-name">' + u.nombre + badges + '</div>' +
+            '<div class="rank-club">🏆 ' + (u.club_campeon || '-') + '</div>' +
+          '</div>' +
+          '<div class="rank-points">' + entry.puntosTotal + '<span>PTS</span></div>' +
         '</div>' +
-        '<div class="rank-points">' + entry.puntosTotal + '<span>PTS</span></div>' +
+        '<button class="toggle-hist" data-user="' + u.id_usuario + '">Ver historial de pronósticos (' + cantidadApuestas + ')</button>' +
+        '<div class="hist-list" id="hist-' + u.id_usuario + '">' + renderHistorialUsuario(u) + '</div>' +
       '</div>'
     );
   }).join('');
 
   cont.innerHTML = html;
+  bindPosicionesEvents();
+}
+
+/**
+ * Arma el historial de pronósticos de una persona: todos los partidos en los
+ * que apostó, ordenados por fecha, con el mismo criterio de ocultamiento
+ * que las tarjetas de partidos (oculto hasta el cierre, salvo que sea tu
+ * propio historial, que siempre ves completo).
+ */
+function renderHistorialUsuario(usuario){
+  var apuestasUsuario = STATE.apuestas.filter(function(a){ return a.id_usuario === usuario.id_usuario; });
+
+  if (!apuestasUsuario.length) {
+    return '<div class="empty-state" style="padding:14px;">Todavía no cargó ningún pronóstico.</div>';
+  }
+
+  var partidosPorId = {};
+  STATE.partidos.forEach(function(p){ partidosPorId[p.id_partido] = p; });
+
+  var conPartido = apuestasUsuario
+    .map(function(ap){ return { apuesta: ap, partido: partidosPorId[ap.id_partido] }; })
+    .filter(function(x){ return !!x.partido; })
+    .sort(function(a, b){ return new Date(a.partido.fecha_hora) - new Date(b.partido.fecha_hora); });
+
+  var esYo = usuario.id_usuario === STATE.usuario.id_usuario;
+
+  return conPartido.map(function(x){
+    var ap = x.apuesta;
+    var partido = x.partido;
+    var estado = estadoPartido(partido);
+    var revelado = (estado === 'vivo' || estado === 'finalizado' || estado === 'cerrado');
+
+    var valorHtml, ptsHtml = '';
+    if (revelado || esYo) {
+      valorHtml = '<span class="pick-val">' + ap.goles_local + ' - ' + ap.goles_visitante + '</span>';
+      if (estado === 'finalizado' || estado === 'vivo') {
+        var pts = calcularPuntos(ap, partido);
+        if (pts !== null) {
+          var cls = pts === 3 ? 'pts-3' : (pts === 1 ? 'pts-1' : 'pts-0');
+          ptsHtml = '<span class="pick-pts ' + cls + '">+' + pts + ' pts</span>';
+        }
+      }
+    } else {
+      valorHtml = '<span class="pick-val locked">🔒 Oculta</span>';
+    }
+
+    return (
+      '<div class="pick-row">' +
+        '<div class="hist-match">Ronda ' + (partido.ronda || '?') + '<br><b>' + partido.local + '</b> vs <b>' + partido.visitante + '</b></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' + valorHtml + ptsHtml + '</div>' +
+      '</div>'
+    );
+  }).join('');
+}
+
+function bindPosicionesEvents(){
+  $all('.toggle-hist').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var id = this.getAttribute('data-user');
+      var list = $('#hist-' + id);
+      list.classList.toggle('open');
+    });
+  });
 }
 
 /* =========================================================================
