@@ -206,6 +206,11 @@
   .rank-info{ flex:1; min-width:0; }
   .rank-name{ font-size:13.5px; font-weight:800; display:flex; align-items:center; gap:5px; }
   .rank-club{ font-size:11px; color:var(--gris); }
+  .rank-badges{ display:flex; flex-wrap:wrap; gap:4px; margin:3px 0; }
+  .badge-pill{
+    font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:20px;
+    background:var(--gris-claro); color:var(--azul-2); white-space:nowrap;
+  }
   .rank-racha{ font-size:10px; color:#b5820a; font-weight:800; margin-top:2px; }
   .btn-compartir{
     width:100%; padding:12px; border:none; border-radius:14px; background:#25d366;
@@ -1331,6 +1336,20 @@ function idsConMaximo(mapaIdValor){
   return ids.filter(function(id){ return mapaIdValor[id] === max; });
 }
 
+/**
+ * Arma la lista de badges { emoji, label } de un usuario, para usarla tanto
+ * en la tabla de posiciones como en el texto que se comparte por WhatsApp.
+ */
+function obtenerBadgesUsuario(idUsuario, idx, muertoIds, especiales){
+  var lista = [];
+  if (idx === 0) lista.push({ emoji: '👑', label: 'El Puntero' });
+  if (muertoIds.indexOf(idUsuario) !== -1) lista.push({ emoji: '🪦', label: 'El Muerto de la Fecha' });
+  if (especiales.ojoHalconIds.indexOf(idUsuario) !== -1) lista.push({ emoji: '🎯', label: 'Ojo de Halcón' });
+  if (especiales.justoTiempoIds.indexOf(idUsuario) !== -1) lista.push({ emoji: '🐢', label: 'Justo a Tiempo' });
+  if (especiales.nuncaAprendeIds.indexOf(idUsuario) !== -1) lista.push({ emoji: '🤡', label: 'El Que Nunca Aprende' });
+  return lista;
+}
+
 function checkUltimoLugar(){
   var ronda = ultimaRondaFinalizada();
   if (!ronda || !STATE.usuario) return;
@@ -1615,12 +1634,10 @@ function renderPosiciones(){
 
   var html = tabla.map(function(entry, idx){
     var u = entry.usuario;
-    var badges = '';
-    if (idx === 0) badges += ' 👑';
-    if (muertoIds.indexOf(u.id_usuario) !== -1) badges += ' 🪦';
-    if (especiales.ojoHalconIds.indexOf(u.id_usuario) !== -1) badges += ' <span title="Ojo de Halcón: más marcadores exactos de la temporada">🎯</span>';
-    if (especiales.justoTiempoIds.indexOf(u.id_usuario) !== -1) badges += ' <span title="Justo a Tiempo: el que más apuesta sobre la hora">🐢</span>';
-    if (especiales.nuncaAprendeIds.indexOf(u.id_usuario) !== -1) badges += ' <span title="El Que Nunca Aprende: el marcador que más se aleja del resultado real">🤡</span>';
+    var listaBadges = obtenerBadgesUsuario(u.id_usuario, idx, muertoIds, especiales);
+    var badgesHtml = listaBadges.length
+      ? '<div class="rank-badges">' + listaBadges.map(function(b){ return '<span class="badge-pill">' + b.emoji + ' ' + b.label + '</span>'; }).join('') + '</div>'
+      : '';
 
     var racha = calcularRachaSinUltimo(entry, tabla);
     var rachaHtml = racha >= 2 ? '<div class="rank-racha">🔥 ' + racha + ' fechas seguidas sin ser el último</div>' : '';
@@ -1633,7 +1650,8 @@ function renderPosiciones(){
           '<div class="rank-pos">' + (idx + 1) + '</div>' +
           '<img class="avatar" src="' + safeImg(u.foto_url, u.nombre) + '">' +
           '<div class="rank-info">' +
-            '<div class="rank-name">' + u.nombre + badges + '</div>' +
+            '<div class="rank-name">' + u.nombre + '</div>' +
+            badgesHtml +
             '<div class="rank-club">🏆 ' + (u.club_campeon || '-') + '</div>' +
             rachaHtml +
           '</div>' +
@@ -1731,14 +1749,14 @@ function compartirTabla(){
 
   var lineas = tabla.map(function(entry, idx){
     var u = entry.usuario;
-    var marcas = '';
-    if (idx === 0) marcas += ' 👑';
-    if (muertoIds.indexOf(u.id_usuario) !== -1) marcas += ' 🪦';
-    if (especiales.ojoHalconIds.indexOf(u.id_usuario) !== -1) marcas += ' 🎯';
-    return (idx + 1) + '. ' + u.nombre + marcas + ' - ' + entry.puntosTotal + ' pts';
+    var listaBadges = obtenerBadgesUsuario(u.id_usuario, idx, muertoIds, especiales);
+    var emojis = listaBadges.map(function(b){ return b.emoji; }).join('');
+    return (idx + 1) + '. ' + u.nombre + (emojis ? ' ' + emojis : '') + ' - ' + entry.puntosTotal + ' pts';
   });
 
-  var texto = '🏆 Tabla de posiciones - Fulbo ⚽\n\n' + lineas.join('\n') + '\n\n¿Quién va a ser el próximo Muerto de la Fecha? 😅';
+  var leyenda = '👑 El Puntero · 🪦 El Muerto de la Fecha · 🎯 Ojo de Halcón · 🐢 Justo a Tiempo · 🤡 El Que Nunca Aprende';
+
+  var texto = '🏆 Tabla de posiciones - Fulbo ⚽\n\n' + lineas.join('\n') + '\n\n' + leyenda + '\n\n¿Quién va a ser el próximo Muerto de la Fecha? 😅';
 
   if (navigator.share) {
     navigator.share({ title: 'Fulbo - Tabla de posiciones', text: texto }).catch(function(){});
