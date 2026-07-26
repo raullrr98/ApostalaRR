@@ -216,6 +216,13 @@
     width:100%; padding:12px; border:none; border-radius:14px; background:#25d366;
     color:#fff; font-weight:800; font-size:13px; margin-bottom:14px;
   }
+  .badge-info-card{
+    display:flex; align-items:center; gap:14px; background:#fff; border-radius:14px;
+    padding:14px; margin-bottom:10px; box-shadow:var(--sombra);
+  }
+  .badge-info-emoji{ font-size:28px; width:38px; text-align:center; flex-shrink:0; }
+  .badge-info-title{ font-size:13.5px; font-weight:800; color:var(--azul); margin-bottom:2px; }
+  .badge-info-desc{ font-size:12px; color:var(--gris-oscuro); line-height:1.4; }
   .rank-points{ font-size:16px; font-weight:900; color:var(--rojo); text-align:right; }
   .rank-points span{ display:block; font-size:9px; color:var(--gris); font-weight:700; }
   .hist-match{ flex:1; min-width:0; font-size:11px; line-height:1.4; color:var(--gris-oscuro); padding-right:8px; }
@@ -395,6 +402,7 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="partidos">📅 Partidos</button>
       <button class="tab-btn" data-tab="posiciones">🏆 Posiciones</button>
+      <button class="tab-btn" data-tab="badges">🏅 Badges</button>
     </div>
 
     <main>
@@ -405,6 +413,51 @@
       <section id="view-posiciones" class="view">
         <button class="btn-compartir" id="btnCompartirTabla">📤 Compartir tabla por WhatsApp</button>
         <div id="posicionesContainer"><div class="loader">Cargando tabla...</div></div>
+      </section>
+
+      <section id="view-badges" class="view">
+        <div class="badge-info-card">
+          <div class="badge-info-emoji">👑</div>
+          <div class="badge-info-text">
+            <div class="badge-info-title">El Puntero</div>
+            <div class="badge-info-desc">Va primero en la tabla general de puntos.</div>
+          </div>
+        </div>
+        <div class="badge-info-card">
+          <div class="badge-info-emoji">🪦</div>
+          <div class="badge-info-text">
+            <div class="badge-info-title">El Muerto de la Fecha</div>
+            <div class="badge-info-desc">Sacó menos puntos que todos en la última fecha jugada.</div>
+          </div>
+        </div>
+        <div class="badge-info-card">
+          <div class="badge-info-emoji">🎯</div>
+          <div class="badge-info-text">
+            <div class="badge-info-title">Ojo de Halcón</div>
+            <div class="badge-info-desc">El que más marcadores exactos acertó en toda la temporada.</div>
+          </div>
+        </div>
+        <div class="badge-info-card">
+          <div class="badge-info-emoji">🐢</div>
+          <div class="badge-info-text">
+            <div class="badge-info-title">Justo a Tiempo</div>
+            <div class="badge-info-desc">El que más veces cargó su pronóstico sobre la hora, en los últimos 15 minutos antes del cierre.</div>
+          </div>
+        </div>
+        <div class="badge-info-card">
+          <div class="badge-info-emoji">🤡</div>
+          <div class="badge-info-text">
+            <div class="badge-info-title">El Que Nunca Aprende</div>
+            <div class="badge-info-desc">Su marcador es, en promedio, el que más lejos queda del resultado real.</div>
+          </div>
+        </div>
+        <div class="badge-info-card">
+          <div class="badge-info-emoji">🔥</div>
+          <div class="badge-info-text">
+            <div class="badge-info-title">Racha</div>
+            <div class="badge-info-desc">Aparece cuando alguien lleva 2 o más fechas seguidas sin ser el Muerto de la Fecha.</div>
+          </div>
+        </div>
       </section>
     </main>
   </div>
