@@ -149,6 +149,7 @@
   .status-vivo{ background:#fff3d6; color:#b5820a; }
   .status-finalizado{ background:#eceef7; color:var(--gris-oscuro); }
   .match-datetime{ font-size:11px; color:var(--gris); font-weight:600; }
+  .match-countdown{ font-size:11px; font-weight:800; color:var(--rojo); text-align:right; margin-bottom:8px; }
 
   .teams-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .team{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; }
@@ -205,6 +206,11 @@
   .rank-info{ flex:1; min-width:0; }
   .rank-name{ font-size:13.5px; font-weight:800; display:flex; align-items:center; gap:5px; }
   .rank-club{ font-size:11px; color:var(--gris); }
+  .rank-racha{ font-size:10px; color:#b5820a; font-weight:800; margin-top:2px; }
+  .btn-compartir{
+    width:100%; padding:12px; border:none; border-radius:14px; background:#25d366;
+    color:#fff; font-weight:800; font-size:13px; margin-bottom:14px;
+  }
   .rank-points{ font-size:16px; font-weight:900; color:var(--rojo); text-align:right; }
   .rank-points span{ display:block; font-size:9px; color:var(--gris); font-weight:700; }
   .hist-match{ flex:1; min-width:0; font-size:11px; line-height:1.4; color:var(--gris-oscuro); padding-right:8px; }
@@ -392,6 +398,7 @@
       </section>
 
       <section id="view-posiciones" class="view">
+        <button class="btn-compartir" id="btnCompartirTabla">📤 Compartir tabla por WhatsApp</button>
         <div id="posicionesContainer"><div class="loader">Cargando tabla...</div></div>
       </section>
     </main>
@@ -653,6 +660,34 @@ function obtenerMinutosCierre(){
   var minutos = Number(valor);
   if (!valor || isNaN(minutos) || minutos < 0) return CONFIG.CIERRE_MINUTOS_DEFECTO;
   return minutos;
+}
+
+/**
+ * Texto de cuenta regresiva para una tarjeta de partido:
+ * "Cierra en Xh Ym" mientras está abierto, "Arranca en Xh Ym" una vez
+ * cerrado pero antes de que empiece. Vacío si ya empezó o finalizó.
+ */
+function formatCountdown(partido){
+  var estado = estadoPartido(partido);
+  if (estado === 'finalizado' || estado === 'vivo') return '';
+
+  var fecha = new Date(partido.fecha_hora);
+  var cierre = new Date(fecha.getTime() - obtenerMinutosCierre() * 60000);
+  var ahora = new Date();
+  var objetivo = (estado === 'abierto') ? cierre : fecha;
+
+  var ms = objetivo.getTime() - ahora.getTime();
+  if (ms <= 0) return '';
+
+  var totalMin = Math.floor(ms / 60000);
+  var dias = Math.floor(totalMin / (60 * 24));
+  var horas = Math.floor((totalMin % (60 * 24)) / 60);
+  var minutos = totalMin % 60;
+
+  var prefijo = (estado === 'abierto') ? '⏳ Cierra en ' : '⚽ Arranca en ';
+  if (dias > 0) return prefijo + dias + 'd ' + horas + 'h';
+  if (horas > 0) return prefijo + horas + 'h ' + minutos + 'm';
+  return prefijo + minutos + 'm';
 }
 
 /* =========================================================================
@@ -1194,16 +1229,106 @@ function calcularTablaPosiciones(){
 
 /* Determina la última ronda con al menos un partido finalizado */
 function ultimaRondaFinalizada(){
+  var rondas = rondasFinalizadasOrdenadas();
+  return rondas.length ? rondas[0] : null;
+}
+
+/* Rondas con al menos un partido finalizado, de la más reciente a la más antigua */
+function rondasFinalizadasOrdenadas(){
+  var vistas = {};
   var rondas = [];
+  // STATE.partidos ya está ordenado cronológicamente ascendente
   STATE.partidos.forEach(function(p){
-    if (String(p.estado).toUpperCase() === 'FINALIZADO') {
-      if (rondas.indexOf(p.ronda) === -1) rondas.push(p.ronda);
+    if (String(p.estado).toUpperCase() === 'FINALIZADO' && !vistas[p.ronda]) {
+      vistas[p.ronda] = true;
+      rondas.push(p.ronda);
     }
   });
-  if (!rondas.length) return null;
-  // Asumimos que la última en el orden de aparición (partidos ordenados por fecha) es la más reciente
-  var partidosFinalizados = STATE.partidos.filter(function(p){ return String(p.estado).toUpperCase() === 'FINALIZADO'; });
-  return partidosFinalizados[partidosFinalizados.length - 1].ronda;
+  return rondas.reverse();
+}
+
+/**
+ * Cuenta cuántas fechas finalizadas seguidas (de la más reciente hacia
+ * atrás) el usuario evitó ser el "muerto de la fecha". Se corta apenas
+ * encuentra una fecha en la que sí lo fue, o una en la que no participó.
+ */
+function calcularRachaSinUltimo(entry, tablaCompleta){
+  var rondas = rondasFinalizadasOrdenadas();
+  var racha = 0;
+
+  for (var i = 0; i < rondas.length; i++) {
+    var ronda = rondas[i];
+    if (!entry.puntosPorRonda.hasOwnProperty(ronda)) break;
+
+    var conPts = tablaCompleta.filter(function(e){ return e.puntosPorRonda.hasOwnProperty(ronda); });
+    if (conPts.length < 2) break;
+
+    var min = Math.min.apply(null, conPts.map(function(e){ return e.puntosPorRonda[ronda]; }));
+    if (entry.puntosPorRonda[ronda] === min) break;
+
+    racha++;
+  }
+
+  return racha;
+}
+
+/**
+ * Badges de temporada completa (no solo la última fecha):
+ * - ojoHalconIds: más marcadores exactos (3 puntos) acumulados.
+ * - justoTiempoIds: más apuestas cargadas en los últimos 15 minutos antes del cierre.
+ * - nuncaAprendeIds: mayor error promedio de marcador en partidos finalizados.
+ */
+function calcularBadgesEspeciales(){
+  var partidosPorId = {};
+  STATE.partidos.forEach(function(p){ partidosPorId[p.id_partido] = p; });
+
+  var exactosPorUsuario = {};
+  var justoTiempoPorUsuario = {};
+  var distanciaPorUsuario = {}; // { suma, cantidad }
+  var margenMs = 15 * 60000;
+
+  STATE.apuestas.forEach(function(ap){
+    var partido = partidosPorId[ap.id_partido];
+    if (!partido) return;
+
+    var pts = calcularPuntos(ap, partido);
+    if (pts === 3) {
+      exactosPorUsuario[ap.id_usuario] = (exactosPorUsuario[ap.id_usuario] || 0) + 1;
+    }
+    if (pts !== null) {
+      var gl = Number(partido.goles_local_real);
+      var gv = Number(partido.goles_visitante_real);
+      var distancia = Math.abs(Number(ap.goles_local) - gl) + Math.abs(Number(ap.goles_visitante) - gv);
+      if (!distanciaPorUsuario[ap.id_usuario]) distanciaPorUsuario[ap.id_usuario] = { suma: 0, cantidad: 0 };
+      distanciaPorUsuario[ap.id_usuario].suma += distancia;
+      distanciaPorUsuario[ap.id_usuario].cantidad += 1;
+    }
+
+    var fecha = new Date(partido.fecha_hora);
+    var cierre = new Date(fecha.getTime() - obtenerMinutosCierre() * 60000);
+    var timestamp = new Date(ap.timestamp);
+    if (!isNaN(timestamp.getTime()) && timestamp.getTime() <= cierre.getTime() && timestamp.getTime() >= (cierre.getTime() - margenMs)) {
+      justoTiempoPorUsuario[ap.id_usuario] = (justoTiempoPorUsuario[ap.id_usuario] || 0) + 1;
+    }
+  });
+
+  var promediosDistancia = {};
+  Object.keys(distanciaPorUsuario).forEach(function(id){
+    promediosDistancia[id] = distanciaPorUsuario[id].suma / distanciaPorUsuario[id].cantidad;
+  });
+
+  return {
+    ojoHalconIds: idsConMaximo(exactosPorUsuario),
+    justoTiempoIds: idsConMaximo(justoTiempoPorUsuario),
+    nuncaAprendeIds: idsConMaximo(promediosDistancia)
+  };
+}
+
+function idsConMaximo(mapaIdValor){
+  var ids = Object.keys(mapaIdValor);
+  if (!ids.length) return [];
+  var max = Math.max.apply(null, ids.map(function(id){ return mapaIdValor[id]; }));
+  return ids.filter(function(id){ return mapaIdValor[id] === max; });
 }
 
 function checkUltimoLugar(){
@@ -1305,6 +1430,7 @@ function renderMatchCard(partido){
   }
 
   var picksHtml = renderPicksList(partido, estado);
+  var countdownTexto = formatCountdown(partido);
 
   return (
     '<div class="match-card" data-partido="' + partido.id_partido + '">' +
@@ -1312,6 +1438,7 @@ function renderMatchCard(partido){
         '<span class="match-status ' + statusClass + '">' + statusLabel + '</span>' +
         '<span class="match-datetime">' + fmtFecha(partido.fecha_hora) + '</span>' +
       '</div>' +
+      (countdownTexto ? '<div class="match-countdown">' + countdownTexto + '</div>' : '') +
       '<div class="teams-row">' +
         '<div class="team"><img src="' + (partido.logo_local || '') + '" onerror="this.style.visibility=\'hidden\'"><div class="team-name">' + partido.local + '</div></div>' +
         scoreBlock +
@@ -1484,11 +1611,19 @@ function renderPosiciones(){
     }
   }
 
+  var especiales = calcularBadgesEspeciales();
+
   var html = tabla.map(function(entry, idx){
     var u = entry.usuario;
     var badges = '';
     if (idx === 0) badges += ' 👑';
     if (muertoIds.indexOf(u.id_usuario) !== -1) badges += ' 🪦';
+    if (especiales.ojoHalconIds.indexOf(u.id_usuario) !== -1) badges += ' <span title="Ojo de Halcón: más marcadores exactos de la temporada">🎯</span>';
+    if (especiales.justoTiempoIds.indexOf(u.id_usuario) !== -1) badges += ' <span title="Justo a Tiempo: el que más apuesta sobre la hora">🐢</span>';
+    if (especiales.nuncaAprendeIds.indexOf(u.id_usuario) !== -1) badges += ' <span title="El Que Nunca Aprende: el marcador que más se aleja del resultado real">🤡</span>';
+
+    var racha = calcularRachaSinUltimo(entry, tabla);
+    var rachaHtml = racha >= 2 ? '<div class="rank-racha">🔥 ' + racha + ' fechas seguidas sin ser el último</div>' : '';
 
     var cantidadApuestas = STATE.apuestas.filter(function(a){ return a.id_usuario === u.id_usuario; }).length;
 
@@ -1500,6 +1635,7 @@ function renderPosiciones(){
           '<div class="rank-info">' +
             '<div class="rank-name">' + u.nombre + badges + '</div>' +
             '<div class="rank-club">🏆 ' + (u.club_campeon || '-') + '</div>' +
+            rachaHtml +
           '</div>' +
           '<div class="rank-points">' + entry.puntosTotal + '<span>PTS</span></div>' +
         '</div>' +
@@ -1574,6 +1710,44 @@ function bindPosicionesEvents(){
     });
   });
 }
+
+/* =========================================================================
+   COMPARTIR TABLA
+   ========================================================================= */
+function compartirTabla(){
+  var tabla = calcularTablaPosiciones();
+  if (!tabla.length) { showToast('Todavía no hay tabla para compartir.'); return; }
+
+  var especiales = calcularBadgesEspeciales();
+  var ronda = ultimaRondaFinalizada();
+  var muertoIds = [];
+  if (ronda) {
+    var conPts = tabla.filter(function(e){ return e.puntosPorRonda.hasOwnProperty(ronda); });
+    if (conPts.length > 1) {
+      var min = Math.min.apply(null, conPts.map(function(e){ return e.puntosPorRonda[ronda]; }));
+      muertoIds = conPts.filter(function(e){ return e.puntosPorRonda[ronda] === min; }).map(function(e){ return e.usuario.id_usuario; });
+    }
+  }
+
+  var lineas = tabla.map(function(entry, idx){
+    var u = entry.usuario;
+    var marcas = '';
+    if (idx === 0) marcas += ' 👑';
+    if (muertoIds.indexOf(u.id_usuario) !== -1) marcas += ' 🪦';
+    if (especiales.ojoHalconIds.indexOf(u.id_usuario) !== -1) marcas += ' 🎯';
+    return (idx + 1) + '. ' + u.nombre + marcas + ' - ' + entry.puntosTotal + ' pts';
+  });
+
+  var texto = '🏆 Tabla de posiciones - Fulbo ⚽\n\n' + lineas.join('\n') + '\n\n¿Quién va a ser el próximo Muerto de la Fecha? 😅';
+
+  if (navigator.share) {
+    navigator.share({ title: 'Fulbo - Tabla de posiciones', text: texto }).catch(function(){});
+  } else {
+    window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+  }
+}
+
+$('#btnCompartirTabla').addEventListener('click', compartirTabla);
 
 /* =========================================================================
    TABS
