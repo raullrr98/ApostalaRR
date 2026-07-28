@@ -409,6 +409,7 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="partidos">📅 Partidos</button>
       <button class="tab-btn" data-tab="posiciones">🏆 Posiciones</button>
+      <button class="tab-btn" data-tab="tablafecha">📆 Tabla</button>
       <button class="tab-btn" data-tab="badges">🏅 Badges</button>
     </div>
 
@@ -420,6 +421,14 @@
       <section id="view-posiciones" class="view">
         <button class="btn-compartir" id="btnCompartirTabla">📤 Compartir tabla por WhatsApp</button>
         <div id="posicionesContainer"><div class="loader">Cargando tabla...</div></div>
+      </section>
+
+      <section id="view-tablafecha" class="view">
+        <div class="ronda-title" style="margin-top:0;">🏆 Tabla General</div>
+        <div id="tgGeneralContainer"><div class="loader">Cargando...</div></div>
+
+        <div class="ronda-title">📆 Tabla de la Fecha <span id="tgFechaLabel"></span></div>
+        <div id="tgFechaContainer"><div class="loader">Cargando...</div></div>
       </section>
 
       <section id="view-badges" class="view">
@@ -1334,6 +1343,7 @@ function loadAllData(isFirstLoad){
     avisarResultadosNuevos();
     renderPartidos();
     renderPosiciones();
+    renderTablaFecha();
     if (isFirstLoad) {
       // Primero el pop-up de Ganador de la Fecha (si corresponde), y recién
       // cuando el usuario lo cierra, se evalúa el de Último Lugar, para que
@@ -1984,6 +1994,72 @@ function renderPosiciones(){
 
   cont.innerHTML = html;
   bindPosicionesEvents();
+}
+
+/* =========================================================================
+   PESTAÑA "TABLA": general + de la fecha en curso
+   ========================================================================= */
+
+/**
+ * Ronda a mostrar como "de la fecha": la más reciente entre los partidos
+ * activos (no archivados). Si ya se cerraron/archivaron todas las rondas
+ * activas, cae a la última ronda que exista en todo STATE.partidos.
+ */
+function rondaActualParaTabla(){
+  var activos = partidosActivos();
+  var fuente = activos.length ? activos : STATE.partidos;
+  if (!fuente.length) return null;
+  return fuente[fuente.length - 1].ronda; // STATE.partidos viene ordenado por fecha ascendente
+}
+
+/** Ranking { usuario, puntos } de una ronda puntual (0 si no jugó esa fecha). */
+function calcularTablaDeRonda(ronda){
+  var tabla = calcularTablaPosiciones();
+  var lista = tabla.map(function(entry){
+    return {
+      usuario: entry.usuario,
+      puntos: entry.puntosPorRonda.hasOwnProperty(ronda) ? entry.puntosPorRonda[ronda] : 0
+    };
+  });
+  lista.sort(function(a, b){ return b.puntos - a.puntos; });
+  return lista;
+}
+
+/** Fila compacta (sin badges/historial) para las tablas de esta pestaña. */
+function renderFilaSimple(usuario, puntos, idx){
+  return (
+    '<div class="rank-card' + (idx === 0 ? ' top1' : '') + '">' +
+      '<div class="rank-row">' +
+        '<div class="rank-pos">' + (idx + 1) + '</div>' +
+        '<img class="avatar" src="' + safeImg(usuario.foto_url, usuario.nombre) + '">' +
+        '<div class="rank-info"><div class="rank-name">' + usuario.nombre + '</div></div>' +
+        '<div class="rank-points">' + puntos + '<span>PTS</span></div>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function renderTablaFecha(){
+  var tabla = calcularTablaPosiciones();
+
+  var generalHtml = tabla
+    .map(function(entry, idx){ return renderFilaSimple(entry.usuario, entry.puntosTotal, idx); })
+    .join('');
+  $('#tgGeneralContainer').innerHTML = generalHtml || '<div class="empty-state">Todavía no hay usuarios registrados.</div>';
+
+  var ronda = rondaActualParaTabla();
+  if (!ronda) {
+    $('#tgFechaLabel').textContent = '';
+    $('#tgFechaContainer').innerHTML = '<div class="empty-state">Todavía no hay partidos cargados.</div>';
+    return;
+  }
+
+  $('#tgFechaLabel').textContent = '(Ronda ' + ronda + ')';
+  var listaFecha = calcularTablaDeRonda(ronda);
+  var fechaHtml = listaFecha
+    .map(function(item, idx){ return renderFilaSimple(item.usuario, item.puntos, idx); })
+    .join('');
+  $('#tgFechaContainer').innerHTML = fechaHtml || '<div class="empty-state">Sin datos todavía para esta fecha.</div>';
 }
 
 /**
