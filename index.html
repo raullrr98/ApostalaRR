@@ -270,6 +270,13 @@
     color:var(--rojo); background:var(--gris-claro); border-radius:14px; padding:16px;
     margin-bottom:16px; font-family:'Courier New',monospace;
   }
+  .modal-close-x{
+    position:absolute; top:14px; right:14px; background:var(--gris-claro); border:none;
+    width:30px; height:30px; border-radius:50%; font-size:14px; color:var(--gris-oscuro);
+    display:flex; align-items:center; justify-content:center; line-height:1;
+  }
+  .modal-close-x:active{ background:#e5e8f2; }
+  .ganador-nombres{ margin: 4px 0 10px 0; }
 
   .toast{
     position:fixed; top:16px; left:50%; transform:translateX(-50%);
@@ -490,6 +497,21 @@
     </div>
   </div>
 
+  <!-- ===================== MODAL: GANADOR DE LA FECHA ===================== -->
+  <div class="overlay" id="overlayGanadorFecha">
+    <div class="modal" style="text-align:center; position:relative;">
+      <button id="btnCerrarGanadorX" class="modal-close-x" aria-label="Cerrar">✕</button>
+      <div style="font-size:42px; margin-bottom:6px;">🏆</div>
+      <h3 id="ganadorFechaTitulo">¡Ganador de la Fecha!</h3>
+      <div id="ganadorFechaRonda" style="font-size:12px; color:var(--gris); font-weight:700; margin-bottom:14px;"></div>
+      <div id="ganadorFechaNombres" class="ganador-nombres"></div>
+      <div id="ganadorFechaPuntos" style="font-size:14px; font-weight:800; color:var(--rojo); margin:6px 0 18px;"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="btnCerrarGanadorFecha" style="width:100%;">Genial 🍻</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== MODAL: ÚLTIMO LUGAR ===================== -->
   <div class="overlay" id="overlayUltimo">
     <div class="modal">
@@ -563,6 +585,15 @@
         <div id="adminPartidosContainer"><div class="loader">Cargando partidos...</div></div>
       </div>
 
+      <div class="admin-section">
+        <h3>Cerrar fecha (limpiar vista, sin perder puntos)</h3>
+        <p style="font-size:11.5px;color:var(--gris);margin-bottom:10px;">
+          Al cerrar una fecha, sus partidos dejan de verse en "Partidos" y acá arriba,
+          pero sus puntos siguen contando siempre en la tabla general y el historial.
+        </p>
+        <div id="adminCerrarFechaContainer"><div class="loader">Cargando...</div></div>
+      </div>
+
       <button class="btn-secondary" id="btnCerrarSesionAdmin" style="width:100%; margin-bottom:20px;">Cerrar sesión de admin</button>
     </div>
   </div>
@@ -582,6 +613,7 @@ var CONFIG = {
 
 var LS_KEY = 'fulbo_user';
 var SS_KEY_ULTIMO = 'fulbo_ultimo_mostrado';
+var LS_KEY_GANADOR_PREFIX = 'fulbo_ganador_mostrado_'; // + numero de ronda
 
 /* =========================================================================
    ESTADO GLOBAL
@@ -642,17 +674,33 @@ function fmtFecha(iso){
   return dias[d.getDay()] + ' ' + d.getDate() + ' ' + meses[d.getMonth()] + ' · ' + hh + ':' + mm;
 }
 
+/**
+ * Avatar por defecto para quien no subió foto: un robot generado con
+ * DiceBear (servicio público y gratuito), con "seed" = nombre del usuario,
+ * para que siempre le toque el mismo bot (no cambia en cada recarga).
+ */
 function avatarFallback(nombre){
-  var letra = (nombre || '?').trim().charAt(0).toUpperCase();
-  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80">' +
-    '<rect width="100%" height="100%" fill="%230d1b3e"/>' +
-    '<text x="50%" y="55%" font-size="34" fill="%23fff" text-anchor="middle" font-family="Arial" dy=".1em">' + letra + '</text>' +
-    '</svg>';
-  return 'data:image/svg+xml,' + svg;
+  var seed = encodeURIComponent((nombre || 'jugador').trim().toLowerCase());
+  return 'https://api.dicebear.com/9.x/bottts/svg?seed=' + seed +
+    '&backgroundColor=0d1b3e,16295c,d1263f,ffc93c,2ecc71&backgroundType=solid';
 }
 
 function safeImg(url, nombre){
   return url && url.trim() ? url.trim() : avatarFallback(nombre);
+}
+
+/**
+ * Interpreta el campo "archivado" tal como puede llegar desde el Sheet:
+ * booleano real, o texto "TRUE"/"true"/"1". Vacío o ausente = no archivado.
+ */
+function esArchivado(partido){
+  var v = partido.archivado;
+  return v === true || String(v).toUpperCase() === 'TRUE' || String(v) === '1';
+}
+
+/** Partidos NO archivados: son los que se ven en "Partidos" y en el admin. */
+function partidosActivos(){
+  return STATE.partidos.filter(function(p){ return !esArchivado(p); });
 }
 
 /**
@@ -1025,6 +1073,7 @@ function mostrarAdminPanel(sesion){
   $('#adminInputCampeon').value = getConfigValor('campeon_real') || '';
 
   renderAdminPartidos();
+  renderAdminCerrarFecha();
 }
 
 $('#btnAdminLogin').addEventListener('click', function(){
@@ -1092,18 +1141,20 @@ $('#btnGuardarCampeon').addEventListener('click', function(){
 
 function renderAdminPartidos(){
   var cont = $('#adminPartidosContainer');
-  if (!STATE.partidos.length) {
-    cont.innerHTML = '<div class="empty-state">No hay partidos cargados en la hoja.</div>';
+  var activos = partidosActivos();
+
+  if (!activos.length) {
+    cont.innerHTML = '<div class="empty-state">No hay partidos activos cargados en la hoja.</div>';
     return;
   }
 
   var rondas = [];
-  STATE.partidos.forEach(function(p){ if (rondas.indexOf(p.ronda) === -1) rondas.push(p.ronda); });
+  activos.forEach(function(p){ if (rondas.indexOf(p.ronda) === -1) rondas.push(p.ronda); });
 
   var html = '';
   rondas.forEach(function(ronda){
     html += '<div class="ronda-title">Ronda ' + ronda + '</div>';
-    STATE.partidos.filter(function(p){ return p.ronda === ronda; }).forEach(function(p){
+    activos.filter(function(p){ return p.ronda === ronda; }).forEach(function(p){
       var finalizado = String(p.estado).toUpperCase() === 'FINALIZADO';
       var gl = (p.goles_local_real === undefined || p.goles_local_real === null) ? '' : p.goles_local_real;
       var gv = (p.goles_visitante_real === undefined || p.goles_visitante_real === null) ? '' : p.goles_visitante_real;
@@ -1151,11 +1202,118 @@ function bindAdminPartidosEvents(){
         estado: finalizado ? 'FINALIZADO' : 'PENDIENTE'
       }).then(function(){
         showToast(finalizado ? '¡Resultado guardado! Puntos actualizados 🎯' : 'Guardado como pendiente.');
-        loadAllData(false).then(function(){ renderAdminPartidos(); });
+        loadAllData(false).then(function(){ renderAdminPartidos(); renderAdminCerrarFecha(); });
       }).catch(function(err){
         showToast('Error: ' + err.message);
         btnRef.disabled = false;
         btnRef.textContent = 'Guardar';
+      });
+    });
+  });
+}
+
+/**
+ * Lista, dentro del Panel Admin:
+ *  - las rondas activas (no archivadas) que ya están 100% FINALIZADO,
+ *    con un botón para cerrarlas.
+ *  - las rondas ya archivadas, con un botón para reabrirlas por si fue
+ *    un error.
+ */
+function renderAdminCerrarFecha(){
+  var cont = $('#adminCerrarFechaContainer');
+  var activos = partidosActivos();
+
+  var vistasActivas = {};
+  var rondasActivas = [];
+  activos.forEach(function(p){ if (!vistasActivas[p.ronda]) { vistasActivas[p.ronda] = true; rondasActivas.push(p.ronda); } });
+
+  var rondasListas = rondasActivas.filter(function(ronda){
+    var partidosRonda = activos.filter(function(p){ return p.ronda === ronda; });
+    return partidosRonda.length && partidosRonda.every(function(p){ return String(p.estado).toUpperCase() === 'FINALIZADO'; });
+  });
+
+  var vistasArchivadas = {};
+  var rondasArchivadas = [];
+  STATE.partidos.forEach(function(p){
+    if (esArchivado(p) && !vistasArchivadas[p.ronda]) { vistasArchivadas[p.ronda] = true; rondasArchivadas.push(p.ronda); }
+  });
+
+  var html = '';
+
+  html += '<div style="font-size:12px; font-weight:800; color:var(--gris-oscuro); margin-bottom:8px;">Fechas listas para cerrar</div>';
+  if (!rondasListas.length) {
+    html += '<div class="empty-state" style="padding:10px 0;">Ninguna fecha activa está 100% finalizada todavía.</div>';
+  } else {
+    rondasListas.forEach(function(ronda){
+      html +=
+        '<div class="admin-partido">' +
+          '<div class="nombre">Ronda ' + ronda + '</div>' +
+          '<div class="fila">' +
+            '<button class="btn-mini btn-cerrar-fecha" data-ronda="' + ronda + '">🔒 Cerrar esta fecha</button>' +
+          '</div>' +
+        '</div>';
+    });
+  }
+
+  if (rondasArchivadas.length) {
+    html += '<div style="font-size:12px; font-weight:800; color:var(--gris-oscuro); margin:16px 0 8px;">Fechas ya cerradas</div>';
+    rondasArchivadas.forEach(function(ronda){
+      html +=
+        '<div class="admin-partido">' +
+          '<div class="nombre">Ronda ' + ronda + ' (archivada)</div>' +
+          '<div class="fila">' +
+            '<button class="btn-mini btn-reabrir-fecha" data-ronda="' + ronda + '" style="background:var(--gris-oscuro);">🔓 Reabrir</button>' +
+          '</div>' +
+        '</div>';
+    });
+  }
+
+  cont.innerHTML = html;
+
+  $all('.btn-cerrar-fecha').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var ronda = this.getAttribute('data-ronda');
+      if (!confirm('¿Cerrar la Ronda ' + ronda + '? Va a dejar de verse en Partidos, pero sus puntos siguen contando siempre.')) return;
+
+      var btnRef = this;
+      btnRef.disabled = true;
+      btnRef.textContent = 'Cerrando...';
+
+      apiPost({
+        action: 'cerrarFecha',
+        usuario: STATE.adminSesion.usuario,
+        password: STATE.adminSesion.password,
+        ronda: ronda
+      }).then(function(){
+        showToast('Ronda ' + ronda + ' cerrada ✅');
+        loadAllData(false).then(function(){ renderAdminPartidos(); renderAdminCerrarFecha(); });
+      }).catch(function(err){
+        showToast('Error: ' + err.message);
+        btnRef.disabled = false;
+        btnRef.textContent = '🔒 Cerrar esta fecha';
+      });
+    });
+  });
+
+  $all('.btn-reabrir-fecha').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var ronda = this.getAttribute('data-ronda');
+      var btnRef = this;
+      btnRef.disabled = true;
+      btnRef.textContent = 'Reabriendo...';
+
+      apiPost({
+        action: 'reabrirFecha',
+        usuario: STATE.adminSesion.usuario,
+        password: STATE.adminSesion.password,
+        ronda: ronda
+      }).then(function(){
+        showToast('Ronda ' + ronda + ' reabierta ✅');
+        loadAllData(false).then(function(){ renderAdminPartidos(); renderAdminCerrarFecha(); });
+      }).catch(function(err){
+        showToast('Error: ' + err.message);
+        btnRef.disabled = false;
+        btnRef.textContent = '🔓 Reabrir';
       });
     });
   });
@@ -1176,7 +1334,12 @@ function loadAllData(isFirstLoad){
     avisarResultadosNuevos();
     renderPartidos();
     renderPosiciones();
-    if (isFirstLoad) checkUltimoLugar();
+    if (isFirstLoad) {
+      // Primero el pop-up de Ganador de la Fecha (si corresponde), y recién
+      // cuando el usuario lo cierra, se evalúa el de Último Lugar, para que
+      // no se superpongan los dos modales al abrir la app.
+      checkGanadorFecha(function(){ checkUltimoLugar(); });
+    }
   }).catch(function(err){
     $('#partidosContainer').innerHTML = '<div class="empty-state">No se pudo conectar con la base de datos.<br>Revisá SCRIPT_URL en el código.<br><small>' + err.message + '</small></div>';
   });
@@ -1425,6 +1588,107 @@ function checkUltimoLugar(){
 }
 
 /* =========================================================================
+   GANADOR DE LA FECHA
+   (se dispara recién cuando TODOS los partidos de la ronda están
+   FINALIZADO -- a diferencia de "ultimaRondaFinalizada", que se usa para
+   badges/muerto y solo pide que haya al menos un partido finalizado)
+   ========================================================================= */
+
+/** Todos los partidos de una ronda puntual. */
+function partidosDeRonda(ronda){
+  return STATE.partidos.filter(function(p){ return p.ronda === ronda; });
+}
+
+/** true solo si la ronda tiene partidos Y todos están FINALIZADO. */
+function rondaEstaCompleta(ronda){
+  var partidosRonda = partidosDeRonda(ronda);
+  if (!partidosRonda.length) return false;
+  return partidosRonda.every(function(p){ return String(p.estado).toUpperCase() === 'FINALIZADO'; });
+}
+
+/** Rondas 100% finalizadas, de la más reciente a la más antigua. */
+function rondasCompletasOrdenadas(){
+  var vistas = {};
+  var rondas = [];
+  // STATE.partidos ya está ordenado cronológicamente ascendente
+  STATE.partidos.forEach(function(p){
+    if (!vistas[p.ronda]) { vistas[p.ronda] = true; rondas.push(p.ronda); }
+  });
+  return rondas.filter(rondaEstaCompleta).reverse();
+}
+
+function ultimaRondaCompleta(){
+  var rondas = rondasCompletasOrdenadas();
+  return rondas.length ? rondas[0] : null;
+}
+
+/** { ganadores: [usuario, ...], puntos: n } de una ronda ya completa. */
+function calcularGanadoresDeRonda(ronda){
+  var tabla = calcularTablaPosiciones();
+  var conPts = tabla.filter(function(e){ return e.puntosPorRonda.hasOwnProperty(ronda); });
+  if (!conPts.length) return { ganadores: [], puntos: 0 };
+
+  var max = Math.max.apply(null, conPts.map(function(e){ return e.puntosPorRonda[ronda]; }));
+  var ganadores = conPts
+    .filter(function(e){ return e.puntosPorRonda[ronda] === max; })
+    .map(function(e){ return e.usuario; });
+
+  return { ganadores: ganadores, puntos: max };
+}
+
+/**
+ * Revisa si hay una fecha recién completada cuyo pop-up de ganador todavía
+ * no se mostró en este dispositivo. Si corresponde, lo muestra; si no,
+ * llama directo a callbackDespues (para encadenar con checkUltimoLugar).
+ */
+function checkGanadorFecha(callbackDespues){
+  var ronda = ultimaRondaCompleta();
+  if (!ronda) { if (callbackDespues) callbackDespues(); return; }
+
+  var flagKey = LS_KEY_GANADOR_PREFIX + ronda;
+  if (localStorage.getItem(flagKey)) { if (callbackDespues) callbackDespues(); return; }
+
+  var resultado = calcularGanadoresDeRonda(ronda);
+  if (!resultado.ganadores.length) { if (callbackDespues) callbackDespues(); return; }
+
+  // Se marca ANTES de mostrarlo: así, aunque cierre la app a mitad de
+  // camino, no vuelve a insistir con el mismo pop-up al reabrir.
+  localStorage.setItem(flagKey, '1');
+  mostrarModalGanadorFecha(ronda, resultado.ganadores, resultado.puntos, callbackDespues);
+}
+
+function mostrarModalGanadorFecha(ronda, ganadores, puntos, callbackAlCerrar){
+  var esEmpate = ganadores.length > 1;
+
+  var nombresHtml = ganadores.map(function(u){
+    return (
+      '<div style="display:flex; align-items:center; gap:10px; justify-content:center; margin-bottom:6px;">' +
+        '<img src="' + safeImg(u.foto_url, u.nombre) + '" style="width:44px;height:44px;border-radius:50%;object-fit:cover;">' +
+        '<span style="font-size:16px; font-weight:800;">' + u.nombre + '</span>' +
+      '</div>'
+    );
+  }).join('');
+
+  $('#ganadorFechaTitulo').textContent = esEmpate ? '🏆 ¡Empate en la cima!' : '🏆 ¡Ganador de la Fecha!';
+  $('#ganadorFechaRonda').textContent = 'Ronda ' + ronda;
+  $('#ganadorFechaNombres').innerHTML = nombresHtml;
+  $('#ganadorFechaPuntos').textContent = puntos + ' pts en esta fecha';
+
+  STATE.callbackAlCerrarGanador = callbackAlCerrar || null;
+  $('#overlayGanadorFecha').classList.add('open');
+}
+
+function cerrarModalGanadorFecha(){
+  $('#overlayGanadorFecha').classList.remove('open');
+  var cb = STATE.callbackAlCerrarGanador;
+  STATE.callbackAlCerrarGanador = null;
+  if (cb) cb();
+}
+
+$('#btnCerrarGanadorX').addEventListener('click', cerrarModalGanadorFecha);
+$('#btnCerrarGanadorFecha').addEventListener('click', cerrarModalGanadorFecha);
+
+/* =========================================================================
    RENDER: PARTIDOS
    ========================================================================= */
 function apuestaDeUsuario(idPartido, idUsuario){
@@ -1437,20 +1701,22 @@ function apuestaDeUsuario(idPartido, idUsuario){
 
 function renderPartidos(){
   var cont = $('#partidosContainer');
-  if (!STATE.partidos.length) {
-    cont.innerHTML = '<div class="empty-state">Todavía no hay partidos cargados en la hoja.</div>';
+  var activos = partidosActivos();
+
+  if (!activos.length) {
+    cont.innerHTML = '<div class="empty-state">Todavía no hay partidos cargados para esta fecha.</div>';
     return;
   }
 
   var rondas = [];
-  STATE.partidos.forEach(function(p){
+  activos.forEach(function(p){
     if (rondas.indexOf(p.ronda) === -1) rondas.push(p.ronda);
   });
 
   var html = '';
   rondas.forEach(function(ronda){
     html += '<div class="ronda-title">Ronda ' + ronda + '</div>';
-    STATE.partidos.filter(function(p){ return p.ronda === ronda; }).forEach(function(partido){
+    activos.filter(function(p){ return p.ronda === ronda; }).forEach(function(partido){
       html += renderMatchCard(partido);
     });
   });
