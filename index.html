@@ -806,6 +806,16 @@ function esArchivado(partido){
   return v === true || String(v).toUpperCase() === 'TRUE' || String(v) === '1';
 }
 
+/**
+ * Normaliza el valor de "ronda" (texto libre en la hoja de Google Sheets):
+ * lo pasa a texto y le saca espacios de más al principio/final. Así, un
+ * partido cargado como ronda `2`, `"2"` o `" 2 "` siempre agrupa junto con
+ * los demás de esa misma fecha, sin importar cómo se haya tipeado.
+ */
+function normRonda(valor){
+  return String(valor === undefined || valor === null ? '' : valor).trim();
+}
+
 /** Partidos NO archivados: son los que se ven en "Partidos" y en el admin. */
 function partidosActivos(){
   return STATE.partidos.filter(function(p){ return !esArchivado(p); });
@@ -1285,12 +1295,15 @@ function renderAdminPartidos(){
   }
 
   var rondas = [];
-  activos.forEach(function(p){ if (rondas.indexOf(p.ronda) === -1) rondas.push(p.ronda); });
+  activos.forEach(function(p){
+    var r = normRonda(p.ronda);
+    if (rondas.indexOf(r) === -1) rondas.push(r);
+  });
 
   var html = '';
   rondas.forEach(function(ronda){
     html += '<div class="ronda-title">Ronda ' + ronda + '</div>';
-    activos.filter(function(p){ return p.ronda === ronda; }).forEach(function(p){
+    activos.filter(function(p){ return normRonda(p.ronda) === ronda; }).forEach(function(p){
       var finalizado = String(p.estado).toUpperCase() === 'FINALIZADO';
       var gl = (p.goles_local_real === undefined || p.goles_local_real === null) ? '' : p.goles_local_real;
       var gv = (p.goles_visitante_real === undefined || p.goles_visitante_real === null) ? '' : p.goles_visitante_real;
@@ -1361,17 +1374,21 @@ function renderAdminCerrarFecha(){
 
   var vistasActivas = {};
   var rondasActivas = [];
-  activos.forEach(function(p){ if (!vistasActivas[p.ronda]) { vistasActivas[p.ronda] = true; rondasActivas.push(p.ronda); } });
+  activos.forEach(function(p){
+    var r = normRonda(p.ronda);
+    if (!vistasActivas[r]) { vistasActivas[r] = true; rondasActivas.push(r); }
+  });
 
   var rondasListas = rondasActivas.filter(function(ronda){
-    var partidosRonda = activos.filter(function(p){ return p.ronda === ronda; });
+    var partidosRonda = activos.filter(function(p){ return normRonda(p.ronda) === ronda; });
     return partidosRonda.length && partidosRonda.every(function(p){ return String(p.estado).toUpperCase() === 'FINALIZADO'; });
   });
 
   var vistasArchivadas = {};
   var rondasArchivadas = [];
   STATE.partidos.forEach(function(p){
-    if (esArchivado(p) && !vistasArchivadas[p.ronda]) { vistasArchivadas[p.ronda] = true; rondasArchivadas.push(p.ronda); }
+    var r = normRonda(p.ronda);
+    if (esArchivado(p) && !vistasArchivadas[r]) { vistasArchivadas[r] = true; rondasArchivadas.push(r); }
   });
 
   var html = '';
@@ -1627,7 +1644,7 @@ function calcularTablaPosiciones(){
     if (!mapa[ap.id_usuario]) return;
 
     mapa[ap.id_usuario].puntosTotal += pts;
-    var ronda = partido.ronda || '?';
+    var ronda = normRonda(partido.ronda) || '?';
     if (!mapa[ap.id_usuario].puntosPorRonda[ronda]) mapa[ap.id_usuario].puntosPorRonda[ronda] = 0;
     mapa[ap.id_usuario].puntosPorRonda[ronda] += pts;
   });
@@ -1659,9 +1676,10 @@ function rondasFinalizadasOrdenadas(){
   var rondas = [];
   // STATE.partidos ya está ordenado cronológicamente ascendente
   STATE.partidos.forEach(function(p){
-    if (String(p.estado).toUpperCase() === 'FINALIZADO' && !vistas[p.ronda]) {
-      vistas[p.ronda] = true;
-      rondas.push(p.ronda);
+    var r = normRonda(p.ronda);
+    if (String(p.estado).toUpperCase() === 'FINALIZADO' && !vistas[r]) {
+      vistas[r] = true;
+      rondas.push(r);
     }
   });
   return rondas.reverse();
@@ -1795,7 +1813,7 @@ function checkUltimoLugar(){
 
 /** Todos los partidos de una ronda puntual. */
 function partidosDeRonda(ronda){
-  return STATE.partidos.filter(function(p){ return p.ronda === ronda; });
+  return STATE.partidos.filter(function(p){ return normRonda(p.ronda) === ronda; });
 }
 
 /** true solo si la ronda tiene partidos Y todos están FINALIZADO. */
@@ -1811,7 +1829,8 @@ function rondasCompletasOrdenadas(){
   var rondas = [];
   // STATE.partidos ya está ordenado cronológicamente ascendente
   STATE.partidos.forEach(function(p){
-    if (!vistas[p.ronda]) { vistas[p.ronda] = true; rondas.push(p.ronda); }
+    var r = normRonda(p.ronda);
+    if (!vistas[r]) { vistas[r] = true; rondas.push(r); }
   });
   return rondas.filter(rondaEstaCompleta).reverse();
 }
@@ -1941,13 +1960,14 @@ function renderPartidos(){
 
   var rondas = [];
   activos.forEach(function(p){
-    if (rondas.indexOf(p.ronda) === -1) rondas.push(p.ronda);
+    var r = normRonda(p.ronda);
+    if (rondas.indexOf(r) === -1) rondas.push(r);
   });
 
   var html = '';
   rondas.forEach(function(ronda){
     html += '<div class="ronda-title">Ronda ' + ronda + '</div>';
-    activos.filter(function(p){ return p.ronda === ronda; }).forEach(function(partido){
+    activos.filter(function(p){ return normRonda(p.ronda) === ronda; }).forEach(function(partido){
       html += renderMatchCard(partido);
     });
   });
@@ -2230,7 +2250,7 @@ function rondaActualParaTabla(){
   var activos = partidosActivos();
   var fuente = activos.length ? activos : STATE.partidos;
   if (!fuente.length) return null;
-  return fuente[fuente.length - 1].ronda; // STATE.partidos viene ordenado por fecha ascendente
+  return normRonda(fuente[fuente.length - 1].ronda); // STATE.partidos viene ordenado por fecha ascendente
 }
 
 /** Ranking { usuario, puntos } de una ronda puntual (0 si no jugó esa fecha). */
@@ -2390,7 +2410,7 @@ function renderHistorialUsuario(usuario){
 
     return (
       '<div class="pick-row">' +
-        '<div class="hist-match">Ronda ' + (partido.ronda || '?') + '<br><b>' + partido.local + '</b> vs <b>' + partido.visitante + '</b></div>' +
+        '<div class="hist-match">Ronda ' + (normRonda(partido.ronda) || '?') + '<br><b>' + partido.local + '</b> vs <b>' + partido.visitante + '</b></div>' +
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' + valorHtml + ptsHtml + '</div>' +
       '</div>'
     );
