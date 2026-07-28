@@ -2242,15 +2242,19 @@ function renderPosiciones(){
    ========================================================================= */
 
 /**
- * Ronda a mostrar como "de la fecha": la más reciente entre los partidos
- * activos (no archivados). Si ya se cerraron/archivaron todas las rondas
- * activas, cae a la última ronda que exista en todo STATE.partidos.
+ * Ronda a mostrar como "de la fecha": la MÁS ANTIGUA entre los partidos
+ * activos (no archivados) -- es decir, la fecha que sigue en curso mientras
+ * el admin no la cierre, aunque ya se hayan precargado partidos de la
+ * próxima ronda. Si ya se cerraron/archivaron todas las rondas activas,
+ * cae a la última ronda que exista en todo STATE.partidos.
  */
 function rondaActualParaTabla(){
   var activos = partidosActivos();
   var fuente = activos.length ? activos : STATE.partidos;
   if (!fuente.length) return null;
-  return normRonda(fuente[fuente.length - 1].ronda); // STATE.partidos viene ordenado por fecha ascendente
+  return activos.length
+    ? normRonda(fuente[0].ronda)                  // la más antigua entre las ACTIVAS = la fecha en curso
+    : normRonda(fuente[fuente.length - 1].ronda);  // fallback: no queda ninguna activa, mostrar la última jugada
 }
 
 /** Ranking { usuario, puntos } de una ronda puntual (0 si no jugó esa fecha). */
