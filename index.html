@@ -2270,9 +2270,13 @@ function calcularTablaDeRonda(ronda){
   return lista;
 }
 
-/** Fila compacta (sin badges) para Posiciones, con historial de pronósticos plegable. */
-function renderFilaSimple(usuario, puntos, idx){
-  var cantidadApuestas = STATE.apuestas.filter(function(a){ return a.id_usuario === usuario.id_usuario; }).length;
+/** Fila compacta (sin badges) para Posiciones, con historial de la MISMA ronda plegable. */
+function renderFilaSimple(usuario, puntos, idx, ronda){
+  var cantidadApuestas = STATE.apuestas.filter(function(a){
+    if (a.id_usuario !== usuario.id_usuario) return false;
+    var partido = STATE.partidos.filter(function(p){ return p.id_partido === a.id_partido; })[0];
+    return partido && normRonda(partido.ronda) === ronda;
+  }).length;
 
   return (
     '<div class="rank-card' + (idx === 0 ? ' top1' : '') + '">' +
@@ -2282,8 +2286,8 @@ function renderFilaSimple(usuario, puntos, idx){
         '<div class="rank-info"><div class="rank-name">' + usuario.nombre + '</div></div>' +
         '<div class="rank-points">' + puntos + '<span>PTS</span></div>' +
       '</div>' +
-      '<button class="toggle-hist" data-target="hist-jornada-' + usuario.id_usuario + '">Ver historial de pronósticos (' + cantidadApuestas + ')</button>' +
-      '<div class="hist-list" id="hist-jornada-' + usuario.id_usuario + '">' + renderHistorialUsuario(usuario) + '</div>' +
+      '<button class="toggle-hist" data-target="hist-jornada-' + usuario.id_usuario + '">Ver resultados de la fecha (' + cantidadApuestas + ')</button>' +
+      '<div class="hist-list" id="hist-jornada-' + usuario.id_usuario + '">' + renderHistorialUsuario(usuario, ronda) + '</div>' +
     '</div>'
   );
 }
@@ -2308,7 +2312,7 @@ function renderPosicionesJornada(){
 
   var lista = calcularTablaDeRonda(ronda);
   var html = lista
-    .map(function(item, idx){ return renderFilaSimple(item.usuario, item.puntos, idx); })
+    .map(function(item, idx){ return renderFilaSimple(item.usuario, item.puntos, idx, ronda); })
     .join('');
   cont.innerHTML = html || '<div class="empty-state">Todavía no hay usuarios registrados.</div>';
   bindPosicionesEvents();
@@ -2380,7 +2384,13 @@ function renderPozo(){
  * que las tarjetas de partidos (oculto hasta el cierre, salvo que sea tu
  * propio historial, que siempre ves completo).
  */
-function renderHistorialUsuario(usuario){
+/**
+ * Historial de pronósticos de un usuario. Si se pasa rondaFiltro, solo
+ * muestra los partidos de esa ronda puntual (se usa en la pestaña
+ * Posiciones, para no mezclar fechas viejas); sin ese parámetro, muestra
+ * toda la temporada (se usa en la pestaña Tabla).
+ */
+function renderHistorialUsuario(usuario, rondaFiltro){
   var apuestasUsuario = STATE.apuestas.filter(function(a){ return a.id_usuario === usuario.id_usuario; });
 
   if (!apuestasUsuario.length) {
@@ -2393,7 +2403,12 @@ function renderHistorialUsuario(usuario){
   var conPartido = apuestasUsuario
     .map(function(ap){ return { apuesta: ap, partido: partidosPorId[ap.id_partido] }; })
     .filter(function(x){ return !!x.partido; })
+    .filter(function(x){ return !rondaFiltro || normRonda(x.partido.ronda) === rondaFiltro; })
     .sort(function(a, b){ return new Date(a.partido.fecha_hora) - new Date(b.partido.fecha_hora); });
+
+  if (!conPartido.length) {
+    return '<div class="empty-state" style="padding:14px;">Todavía no cargó ningún pronóstico en esta fecha.</div>';
+  }
 
   var esYo = usuario.id_usuario === STATE.usuario.id_usuario;
 
