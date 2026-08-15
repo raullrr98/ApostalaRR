@@ -462,6 +462,7 @@
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <button id="btnRefresh" title="Actualizar" style="background:rgba(255,255,255,0.12); border:none; color:#fff; width:34px; height:34px; border-radius:50%; font-size:15px;">🔄</button>
+        <button id="btnNotif" title="Avisos de cierre" style="background:rgba(255,255,255,0.12); border:none; color:#fff; width:34px; height:34px; border-radius:50%; font-size:15px;">🔕</button>
         <div class="user-chip" id="userChip" style="cursor:pointer;">
           <img id="userChipAvatar" src="" alt="">
           <span id="userChipName">-</span>
@@ -489,6 +490,7 @@
       </section>
 
       <section id="view-posiciones" class="view">
+        <button class="btn-compartir" id="btnCompartirResumen">📸 Compartir mi resumen de la fecha</button>
         <div class="ronda-title" style="margin-top:0;" id="posicionesJornadaLabel">Posiciones de la Fecha</div>
         <div id="posicionesJornadaContainer"><div class="loader">Cargando tabla...</div></div>
       </section>
@@ -770,6 +772,120 @@ function fallbackCopy(text){
   ta.select();
   try { document.execCommand('copy'); } catch(e) {}
   document.body.removeChild(ta);
+}
+
+/* =========================================================================
+   FEEDBACK VISUAL/SONORO: confetti, sonido de éxito, vibración
+   Todo generado en el momento (sin archivos ni librerías externas).
+   ========================================================================= */
+
+/** Acorde corto ascendente (Do-Mi-Sol) generado con Web Audio API. */
+function reproducirSonidoExito(){
+  try {
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    var ctx = new AudioCtx();
+    var ahora = ctx.currentTime;
+    [523.25, 659.25, 783.99].forEach(function(freq, i){
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, ahora + i * 0.12);
+      gain.gain.linearRampToValueAtTime(0.22, ahora + i * 0.12 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ahora + i * 0.12 + 0.32);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ahora + i * 0.12);
+      osc.stop(ahora + i * 0.12 + 0.34);
+    });
+  } catch (e) { /* Web Audio no disponible: no rompemos nada por esto */ }
+}
+
+function vibrar(patron){
+  if (navigator.vibrate) {
+    try { navigator.vibrate(patron); } catch (e) {}
+  }
+}
+
+/** Lluvia de confetti de 3 segundos, dibujada en un canvas superpuesto. */
+function lanzarConfetti(){
+  var canvas = document.createElement('canvas');
+  canvas.style.position = 'fixed';
+  canvas.style.inset = '0';
+  canvas.style.zIndex = '500';
+  canvas.style.pointerEvents = 'none';
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  document.body.appendChild(canvas);
+  var ctx = canvas.getContext('2d');
+
+  var colores = ['#ffc93c', '#d1263f', '#2ecc71', '#ffffff', '#16295c'];
+  var particulas = [];
+  for (var i = 0; i < 140; i++) {
+    particulas.push({
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * canvas.height * 0.4,
+      w: 6 + Math.random() * 6,
+      h: 8 + Math.random() * 10,
+      color: colores[Math.floor(Math.random() * colores.length)],
+      velY: 2 + Math.random() * 3,
+      velX: -1.5 + Math.random() * 3,
+      rot: Math.random() * 360,
+      velRot: -6 + Math.random() * 12
+    });
+  }
+
+  var inicio = null;
+  var duracionMs = 3200;
+
+  function frame(ts){
+    if (!inicio) inicio = ts;
+    var elapsed = ts - inicio;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particulas.forEach(function(p){
+      p.x += p.velX;
+      p.y += p.velY;
+      p.rot += p.velRot;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot * Math.PI / 180);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    });
+    if (elapsed < duracionMs) {
+      requestAnimationFrame(frame);
+    } else {
+      canvas.remove();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+/**
+ * Detecta cambios de "puntero" (1° en la Tabla General) comparando contra
+ * el último puntero que vio ESTE dispositivo (localStorage). Si el puntero
+ * nuevo sos vos: confetti + sonido + toast. Si es otro: solo un toast.
+ * No dispara nada en la primerísima carga (para no saludar de arranque).
+ */
+var LS_KEY_PUNTERO = 'fulbo_puntero_actual';
+function chequearNuevoPuntero(tabla){
+  if (!tabla.length) return;
+  var actual = tabla[0].usuario.id_usuario;
+  var anterior = localStorage.getItem(LS_KEY_PUNTERO);
+
+  if (anterior !== null && anterior !== actual) {
+    if (actual === STATE.usuario.id_usuario) {
+      lanzarConfetti();
+      reproducirSonidoExito();
+      vibrar([80, 40, 80, 40, 160]);
+      showToast('👑 ¡Ahora sos el puntero de la tabla general!');
+    } else {
+      showToast('👑 ' + tabla[0].usuario.nombre + ' es el nuevo puntero de la tabla');
+    }
+  }
+  localStorage.setItem(LS_KEY_PUNTERO, actual);
 }
 
 function fmtFecha(iso){
@@ -1079,12 +1195,94 @@ function initLogin(){
   });
 }
 
+/* =========================================================================
+   AVISOS DE CIERRE (Notification API del navegador)
+   ⚠️ Estos avisos funcionan solo mientras la pestaña/app está abierta (en
+   primer o segundo plano). NO son "push" de verdad: si cerrás la app del
+   todo, no llegan. En iPhone además solo funcionan si agregaste el sitio a
+   la pantalla de inicio (Safari normal no los soporta).
+   ========================================================================= */
+var NOTIF_LS_KEY = 'fulbo_notif_activadas';
+var notificadosPartidos = {}; // ids de partidos por los que ya se avisó en esta sesión
+
+function avisosSoportados(){
+  return ('Notification' in window);
+}
+
+function avisosActivados(){
+  return avisosSoportados() && Notification.permission === 'granted' && localStorage.getItem(NOTIF_LS_KEY) === '1';
+}
+
+function actualizarIconoNotif(){
+  var btn = $('#btnNotif');
+  if (!btn) return;
+  var activo = avisosActivados();
+  btn.textContent = activo ? '🔔' : '🔕';
+  btn.style.opacity = activo ? '1' : '0.6';
+}
+
+$('#btnNotif').addEventListener('click', function(){
+  if (!avisosSoportados()) {
+    showToast('Tu navegador no soporta avisos. En iPhone, agregá el sitio a la pantalla de inicio primero.');
+    return;
+  }
+
+  if (avisosActivados()) {
+    localStorage.setItem(NOTIF_LS_KEY, '0');
+    showToast('Avisos desactivados 🔕');
+    actualizarIconoNotif();
+    return;
+  }
+
+  Notification.requestPermission().then(function(permiso){
+    if (permiso === 'granted') {
+      localStorage.setItem(NOTIF_LS_KEY, '1');
+      showToast('¡Avisos activados! Te aviso cuando falte poco para que cierren las apuestas 🔔');
+      new Notification('⚽ Fulbo', { body: 'Listo, te vamos a avisar antes de que cierren las apuestas (con la app abierta).' });
+    } else {
+      showToast('No diste permiso para los avisos.');
+    }
+    actualizarIconoNotif();
+  });
+});
+
+/**
+ * Revisa los partidos activos sin apuesta cargada que están por cerrar
+ * (entre 50 y 60 minutos antes del cierre real) y dispara un aviso local
+ * por cada uno, una sola vez por partido y por sesión.
+ */
+function chequearAvisosDeCierre(){
+  if (!avisosActivados() || !STATE.usuario) return;
+
+  var ahora = new Date();
+  partidosActivos().forEach(function(p){
+    if (String(p.estado).trim().toUpperCase() === 'FINALIZADO') return;
+    if (notificadosPartidos[p.id_partido]) return;
+
+    var fecha = new Date(p.fecha_hora);
+    var cierre = new Date(fecha.getTime() - obtenerMinutosCierre() * 60000);
+    var minutosParaCierre = Math.round((cierre.getTime() - ahora.getTime()) / 60000);
+
+    if (minutosParaCierre <= 60 && minutosParaCierre >= 50) {
+      if (apuestaDeUsuario(p.id_partido, STATE.usuario.id_usuario)) return; // ya apostó, no hace falta avisar
+
+      notificadosPartidos[p.id_partido] = true;
+      try {
+        new Notification('⏳ ¡Se cierra pronto! - Fulbo', {
+          body: p.local + ' vs ' + p.visitante + ' — cargá tu pronóstico antes de que se acabe el tiempo.'
+        });
+      } catch (e) { /* si falla la notificación, no rompemos el resto de la app */ }
+    }
+  });
+}
+
 function showApp(){
   $('#screen-login').style.display = 'none';
   $('#screen-app').style.display = 'block';
   $('#userChipAvatar').src = safeImg(STATE.usuario.foto_url, STATE.usuario.nombre);
   $('#userChipName').textContent = STATE.usuario.nombre;
   $('#tipFloat').style.display = 'flex';
+  actualizarIconoNotif();
   loadAllData(true);
   STATE.pollTimer = setInterval(function(){ loadAllData(false); }, 20000);
 }
@@ -1572,6 +1770,7 @@ function loadAllData(isFirstLoad){
     renderPosiciones();
     renderPosicionesJornada();
     renderPozo();
+    chequearAvisosDeCierre();
     if (isFirstLoad) {
       // Primero el pop-up de Ganador de la Fecha (si corresponde), y recién
       // cuando el usuario lo cierra, se evalúa el de Último Lugar, para que
@@ -1599,12 +1798,30 @@ function avisarResultadosNuevos(){
     return;
   }
 
-  var hayNuevo = finalizadosAhora.some(function(id){ return !STATE.finalizadosVistos[id]; });
+  var idsNuevos = finalizadosAhora.filter(function(id){ return !STATE.finalizadosVistos[id]; });
   finalizadosAhora.forEach(function(id){ STATE.finalizadosVistos[id] = true; });
 
-  if (hayNuevo) {
-    showToast('¡Se cargó un resultado nuevo! Puntos actualizados 🎯');
-  }
+  if (!idsNuevos.length) return;
+
+  showToast('¡Se cargó un resultado nuevo! Puntos actualizados 🎯');
+
+  // Si en alguno de esos partidos nuevos YO clavé el marcador exacto,
+  // festejamos con sonido + vibración además del toast normal.
+  var partidosPorId = {};
+  STATE.partidos.forEach(function(p){ partidosPorId[p.id_partido] = p; });
+
+  idsNuevos.forEach(function(idPartido){
+    var partido = partidosPorId[idPartido];
+    var miApuesta = apuestaDeUsuario(idPartido, STATE.usuario.id_usuario);
+    if (!partido || !miApuesta) return;
+
+    var pts = calcularPuntos(miApuesta, partido);
+    if (pts === 3) {
+      reproducirSonidoExito();
+      vibrar([80, 40, 80, 40, 160]);
+      showToast('🎯 ¡Clavaste el resultado exacto en ' + partido.local + ' vs ' + partido.visitante + '! +3 pts');
+    }
+  });
 }
 
 /* =========================================================================
@@ -2217,6 +2434,8 @@ function renderPosiciones(){
     return;
   }
 
+  chequearNuevoPuntero(tabla);
+
   var ronda = ultimaRondaFinalizada();
   var muertoIds = [];
   if (ronda) {
@@ -2296,6 +2515,152 @@ function calcularTablaDeRonda(ronda){
   lista.sort(function(a, b){ return b.puntos - a.puntos; });
   return lista;
 }
+
+/* =========================================================================
+   TARJETA "RESUMEN DE LA FECHA" (para compartir, tipo Spotify Wrapped)
+   Se dibuja entera en un <canvas> generado en el momento, sin librerías.
+   ========================================================================= */
+
+/** Arma el canvas con el resumen personal de la fecha en curso. Devuelve una Promise<canvas>. */
+function generarResumenFechaCanvas(){
+  return new Promise(function(resolve, reject){
+    var ronda = rondaActualParaTabla();
+    if (!ronda) { reject(new Error('Todavía no hay una fecha en curso.')); return; }
+
+    var lista = calcularTablaDeRonda(ronda);
+    var miIndex = -1;
+    for (var i = 0; i < lista.length; i++) {
+      if (lista[i].usuario.id_usuario === STATE.usuario.id_usuario) { miIndex = i; break; }
+    }
+    if (miIndex === -1) { reject(new Error('Todavía no cargaste pronósticos en esta fecha.')); return; }
+
+    var miPuntos = lista[miIndex].puntos;
+    var miPosicion = miIndex + 1;
+    var total = lista.length;
+
+    var partidosRonda = STATE.partidos.filter(function(p){ return normRonda(p.ronda) === ronda; });
+    var partidosPorId = {};
+    partidosRonda.forEach(function(p){ partidosPorId[p.id_partido] = p; });
+
+    var exactos = 0;
+    STATE.apuestas.forEach(function(a){
+      if (a.id_usuario !== STATE.usuario.id_usuario) return;
+      var p = partidosPorId[a.id_partido];
+      if (!p) return;
+      if (calcularPuntos(a, p) === 3) exactos++;
+    });
+
+    var tagline;
+    if (miPosicion === 1) tagline = '👑 ¡Sos el puntero de la fecha!';
+    else if (total > 1 && miPosicion === total) tagline = '🪦 Fecha para el olvido...';
+    else if (exactos >= 2) tagline = '🎯 ¡Tenés un ojo increíble!';
+    else tagline = '⚽ A seguir remando';
+
+    var W = 640, H = 800;
+    var canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    var ctx = canvas.getContext('2d');
+
+    function dibujarTodo(avatarImg){
+      var grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, '#0d1b3e');
+      grad.addColorStop(1, '#16295c');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffc93c';
+      ctx.font = '900 26px Arial, sans-serif';
+      ctx.fillText('⚽ FULBO · CLAUSURA', W / 2, 80);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 38px Arial, sans-serif';
+      ctx.fillText('Resumen Ronda ' + ronda, W / 2, 140);
+
+      var cx = W / 2, cy = 250, r = 78;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      if (avatarImg) {
+        ctx.drawImage(avatarImg, cx - r, cy - r, r * 2, r * 2);
+      } else {
+        ctx.fillStyle = '#1b2f66';
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      }
+      ctx.restore();
+      ctx.strokeStyle = '#ffc93c';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 32px Arial, sans-serif';
+      ctx.fillText(STATE.usuario.nombre, W / 2, 380);
+
+      ctx.font = '900 100px Arial, sans-serif';
+      ctx.fillStyle = '#d1263f';
+      ctx.fillText(miPuntos + ' pts', W / 2, 490);
+
+      ctx.font = '700 24px Arial, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('Puesto ' + miPosicion + ' de ' + total, W / 2, 535);
+
+      ctx.font = '800 27px Arial, sans-serif';
+      ctx.fillStyle = '#ffc93c';
+      ctx.fillText(tagline, W / 2, 600);
+
+      if (exactos > 0) {
+        ctx.font = '700 20px Arial, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillText('🎯 ' + exactos + ' marcador' + (exactos > 1 ? 'es' : '') + ' exacto' + (exactos > 1 ? 's' : ''), W / 2, 640);
+      }
+
+      ctx.font = '600 15px Arial, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText('raullrr98.github.io/ApostalaRR', W / 2, H - 30);
+
+      resolve(canvas);
+    }
+
+    var img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function(){ dibujarTodo(img); };
+    img.onerror = function(){ dibujarTodo(null); }; // si la foto no se puede leer (CORS, etc.), seguimos sin ella
+    img.src = safeImg(STATE.usuario.foto_url, STATE.usuario.nombre);
+  });
+}
+
+/** Genera la tarjeta y la comparte (o descarga, si el navegador no soporta compartir archivos). */
+function compartirResumenFecha(){
+  generarResumenFechaCanvas().then(function(canvas){
+    canvas.toBlob(function(blob){
+      if (!blob) { showToast('No se pudo generar la imagen.'); return; }
+
+      var file = new File([blob], 'resumen-fulbo.png', { type: 'image/png' });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: 'Mi resumen de la fecha - Fulbo' }).catch(function(){});
+      } else {
+        var urlImg = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = urlImg;
+        a.download = 'resumen-fulbo.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function(){ URL.revokeObjectURL(urlImg); }, 5000);
+        showToast('Imagen descargada 📸');
+      }
+    }, 'image/png');
+  }).catch(function(err){
+    showToast(err.message);
+  });
+}
+
+$('#btnCompartirResumen').addEventListener('click', compartirResumenFecha);
 
 /** Fila compacta (sin badges) para Posiciones, con historial de la MISMA ronda plegable. */
 function renderFilaSimple(usuario, puntos, idx, ronda){
