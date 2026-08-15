@@ -865,7 +865,7 @@ function comprimirImagen(file, maxDim, calidad){
 
 /* Estado de un partido respecto al horario de cierre */
 function estadoPartido(partido){
-  if (String(partido.estado).toUpperCase() === 'FINALIZADO') return 'finalizado';
+  if (String(partido.estado).trim().toUpperCase() === 'FINALIZADO') return 'finalizado';
   var fecha = new Date(partido.fecha_hora);
   var cierre = new Date(fecha.getTime() - obtenerMinutosCierre() * 60000);
   var ahora = new Date();
@@ -1304,7 +1304,7 @@ function renderAdminPartidos(){
   rondas.forEach(function(ronda){
     html += '<div class="ronda-title">Ronda ' + ronda + '</div>';
     activos.filter(function(p){ return normRonda(p.ronda) === ronda; }).forEach(function(p){
-      var finalizado = String(p.estado).toUpperCase() === 'FINALIZADO';
+      var finalizado = String(p.estado).trim().toUpperCase() === 'FINALIZADO';
       var gl = (p.goles_local_real === undefined || p.goles_local_real === null) ? '' : p.goles_local_real;
       var gv = (p.goles_visitante_real === undefined || p.goles_visitante_real === null) ? '' : p.goles_visitante_real;
 
@@ -1381,7 +1381,7 @@ function renderAdminCerrarFecha(){
 
   var rondasListas = rondasActivas.filter(function(ronda){
     var partidosRonda = activos.filter(function(p){ return normRonda(p.ronda) === ronda; });
-    return partidosRonda.length && partidosRonda.every(function(p){ return String(p.estado).toUpperCase() === 'FINALIZADO'; });
+    return partidosRonda.length && partidosRonda.every(function(p){ return String(p.estado).trim().toUpperCase() === 'FINALIZADO'; });
   });
 
   // Rondas activas que todavía tienen algún partido sin FINALIZADO: se
@@ -1409,6 +1409,7 @@ function renderAdminCerrarFecha(){
           '<div class="fila">' +
             '<button class="btn-mini btn-cerrar-fecha" data-ronda="' + ronda + '">🔒 Cerrar esta fecha</button>' +
           '</div>' +
+          '<div class="error-cerrar-fecha" id="error-cerrar-' + ronda + '" style="display:none; margin-top:8px; padding:8px 10px; background:#fdeceb; border-radius:8px; font-size:11.5px; color:var(--rojo); font-weight:700;"></div>' +
         '</div>';
     });
   }
@@ -1417,7 +1418,7 @@ function renderAdminCerrarFecha(){
     html += '<div style="font-size:12px; font-weight:800; color:var(--gris-oscuro); margin:16px 0 8px;">Fechas todavía en juego (falta marcar resultados)</div>';
     rondasIncompletas.forEach(function(ronda){
       var partidosRonda = activos.filter(function(p){ return normRonda(p.ronda) === ronda; });
-      var pendientes = partidosRonda.filter(function(p){ return String(p.estado).toUpperCase() !== 'FINALIZADO'; });
+      var pendientes = partidosRonda.filter(function(p){ return String(p.estado).trim().toUpperCase() !== 'FINALIZADO'; });
       var listaPendientes = pendientes.map(function(p){ return p.local + ' vs ' + p.visitante; }).join(', ');
 
       html +=
@@ -1449,6 +1450,8 @@ function renderAdminCerrarFecha(){
       if (!confirm('¿Cerrar la Ronda ' + ronda + '? Va a dejar de verse en Partidos, pero sus puntos siguen contando siempre.')) return;
 
       var btnRef = this;
+      var errorBox = document.getElementById('error-cerrar-' + ronda);
+      if (errorBox) errorBox.style.display = 'none';
       btnRef.disabled = true;
       btnRef.textContent = 'Cerrando...';
 
@@ -1464,6 +1467,10 @@ function renderAdminCerrarFecha(){
         showToast('Error: ' + err.message);
         btnRef.disabled = false;
         btnRef.textContent = '🔒 Cerrar esta fecha';
+        if (errorBox) {
+          errorBox.textContent = '⚠️ ' + err.message;
+          errorBox.style.display = 'block';
+        }
       });
     });
   });
@@ -1583,7 +1590,7 @@ function loadAllData(isFirstLoad){
  */
 function avisarResultadosNuevos(){
   var finalizadosAhora = STATE.partidos.filter(function(p){
-    return String(p.estado).toUpperCase() === 'FINALIZADO';
+    return String(p.estado).trim().toUpperCase() === 'FINALIZADO';
   }).map(function(p){ return p.id_partido; });
 
   if (STATE.finalizadosVistos === null) {
@@ -1611,7 +1618,7 @@ function calcularPuntos(apuesta, partido){
   //            (ej. apostó 1-1 y salió 0-0: no es el marcador exacto, pero
   //            acertó que el partido terminaba empatado -> 2 pts)
   //   0 pts -> no acertó ni el resultado
-  if (String(partido.estado).toUpperCase() !== 'FINALIZADO') return null;
+  if (String(partido.estado).trim().toUpperCase() !== 'FINALIZADO') return null;
 
   var gl = Number(partido.goles_local_real);
   var gv = Number(partido.goles_visitante_real);
@@ -1697,7 +1704,7 @@ function rondasFinalizadasOrdenadas(){
   // STATE.partidos ya está ordenado cronológicamente ascendente
   STATE.partidos.forEach(function(p){
     var r = normRonda(p.ronda);
-    if (String(p.estado).toUpperCase() === 'FINALIZADO' && !vistas[r]) {
+    if (String(p.estado).trim().toUpperCase() === 'FINALIZADO' && !vistas[r]) {
       vistas[r] = true;
       rondas.push(r);
     }
@@ -1840,7 +1847,7 @@ function partidosDeRonda(ronda){
 function rondaEstaCompleta(ronda){
   var partidosRonda = partidosDeRonda(ronda);
   if (!partidosRonda.length) return false;
-  return partidosRonda.every(function(p){ return String(p.estado).toUpperCase() === 'FINALIZADO'; });
+  return partidosRonda.every(function(p){ return String(p.estado).trim().toUpperCase() === 'FINALIZADO'; });
 }
 
 /** Rondas 100% finalizadas, de la más reciente a la más antigua. */
