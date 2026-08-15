@@ -1384,6 +1384,11 @@ function renderAdminCerrarFecha(){
     return partidosRonda.length && partidosRonda.every(function(p){ return String(p.estado).toUpperCase() === 'FINALIZADO'; });
   });
 
+  // Rondas activas que todavía tienen algún partido sin FINALIZADO: se
+  // muestran aparte, con el detalle de qué falta, para que quede claro por
+  // qué todavía no se puede cerrar esa fecha (en vez de solo un error).
+  var rondasIncompletas = rondasActivas.filter(function(ronda){ return rondasListas.indexOf(ronda) === -1; });
+
   var vistasArchivadas = {};
   var rondasArchivadas = [];
   STATE.partidos.forEach(function(p){
@@ -1404,6 +1409,21 @@ function renderAdminCerrarFecha(){
           '<div class="fila">' +
             '<button class="btn-mini btn-cerrar-fecha" data-ronda="' + ronda + '">🔒 Cerrar esta fecha</button>' +
           '</div>' +
+        '</div>';
+    });
+  }
+
+  if (rondasIncompletas.length) {
+    html += '<div style="font-size:12px; font-weight:800; color:var(--gris-oscuro); margin:16px 0 8px;">Fechas todavía en juego (falta marcar resultados)</div>';
+    rondasIncompletas.forEach(function(ronda){
+      var partidosRonda = activos.filter(function(p){ return normRonda(p.ronda) === ronda; });
+      var pendientes = partidosRonda.filter(function(p){ return String(p.estado).toUpperCase() !== 'FINALIZADO'; });
+      var listaPendientes = pendientes.map(function(p){ return p.local + ' vs ' + p.visitante; }).join(', ');
+
+      html +=
+        '<div class="admin-partido">' +
+          '<div class="nombre">Ronda ' + ronda + ' — ' + (partidosRonda.length - pendientes.length) + ' de ' + partidosRonda.length + ' finalizados</div>' +
+          '<div style="font-size:11.5px; color:var(--rojo); font-weight:600;">Falta: ' + listaPendientes + '</div>' +
         '</div>';
     });
   }
